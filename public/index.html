@@ -126,6 +126,18 @@
   #strip { width:44px; flex:none; display:flex; flex-direction:column; align-items:center; gap:1px; pointer-events:none; min-height:128px; }
   #strip .lbl { font-size:10px; color:#fff; text-shadow:0 1px 0 rgba(0,0,0,.6); white-space:nowrap; height:12px; }
   #strip .ar { color:#fff; font-size:12px; line-height:1; }
+  /* 방금 한 일: 상대와 내가 마지막으로 낸 패 · 뒤집은 패 · 먹은 패 · 뺏은 피 */
+  #last { display:flex; flex-direction:column; gap:2px; min-height:60px; }
+  #last .lr { display:flex; align-items:center; gap:3px; height:29px; padding:0 6px; border-radius:8px; background:rgba(0,0,0,.22); color:#fff; font-size:10px; white-space:nowrap; overflow:hidden; }
+  #last .lr .w { color:var(--yellow); font-size:11px; min-width:22px; }
+  #last .lr .t { opacity:.8; }
+  #last .lr .t.sp { color:#ffd23f; opacity:1; font-weight:700; }
+  #last .lr .t.st { color:#ff9ecb; opacity:1; font-weight:700; }
+  #last .lr .t.no { opacity:.7; }
+  #last .lr .nt { color:#ffd0d8; }
+  #last .lr .gc { display:flex; }
+  #last .cd { width:18px; height:28px; border-width:1px; border-radius:3px; box-shadow:none; flex:none; }
+  #last .gc .cd + .cd { margin-left:-8px; }
   #actions { display:flex; gap:6px; justify-content:center; min-height:30px; flex-wrap:wrap; }
   #actions button { font:inherit; font-size:14px; color:var(--ink); background:var(--yellow); border:3px solid var(--ink); border-radius:999px; box-shadow:0 3px 0 var(--ink); padding:2px 12px; cursor:pointer; }
   #actions button:active { transform:translateY(2px); box-shadow:0 1px 0 var(--ink); }
@@ -178,6 +190,7 @@
         </div>
         <div class="cap" id="myCap"></div>
         <div class="who" id="meWho"></div>
+        <div id="last"></div>
         <div id="actions"></div>
         <div id="hand"></div>
         <div id="toast"></div>

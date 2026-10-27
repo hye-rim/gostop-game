@@ -73,6 +73,7 @@ let totals = [0, 0];                // 컴퓨터 대전 누적 점수
 let room = null, waitingNet = false, netDown = false, deadline = 0, seenSeq = 0, recorded = '';
 let cpuTimer = 0, overTimer = 0;
 let selCard = null;
+let lastTurn = [null, null];        // 좌석마다 마지막 한 차례: { play, flip, got, stolen, special, note }
 let strip = null;                   // { who, play, flip } 방금 일어난 일
 let fresh = new Set();              // 방금 가져온(놓인) 카드
 let stripUntil = 0, busyUntil = 0;
@@ -109,6 +110,19 @@ function fitCap(el, natural) {
   const step = Math.max(5, Math.min(natural, n > grps.length ? room / (n - grps.length) : natural));
   grps.forEach((g) => { g.style.paddingLeft = '0'; g.querySelectorAll('.cd').forEach((c, i) => { c.style.marginLeft = i ? `${step - w}px` : '0'; }); });
 }
+// 마지막 한 차례를 한 줄로: 낸 패 · 뒤집은 패 → 먹은 패, 특별한 일, 뺏은 피
+function lastRow(r, name) {
+  if (!r) return `<div class="lr"><span class="w">${name}</span><span class="t no">아직 없어요</span></div>`;
+  const mini = (id) => cd(id);
+  let h = `<span class="w">${name}</span>`;
+  if (r.play !== undefined) h += `<span class="t">낸 패</span>${mini(r.play)}`;
+  if (r.flip !== undefined) h += `<span class="t">뒤집음</span>${mini(r.flip)}`;
+  h += r.got.length ? `<span class="t">→ 먹음</span><span class="gc">${r.got.map(mini).join('')}</span>` : '<span class="t no">→ 못 먹음</span>';
+  if (r.special.length) h += `<span class="t sp">${r.special.join(' ')}</span>`;
+  if (r.stolen.length) h += `<span class="t st">피 뺏음</span><span class="gc">${r.stolen.map(mini).join('')}</span>`;
+  else if (r.note) h += '<span class="nt">상대 피 없음</span>';
+  return `<div class="lr">${h}</div>`;
+}
 function scoreText(ids) {
   const s = L.scoreOf(ids);
   return `광${s.counts.gwang} 열${s.counts.yeol} 띠${s.counts.tti} 피${s.counts.pi} <b>${s.total}점</b>`;
@@ -132,6 +146,7 @@ function render() {
   if (strip && performance.now() < stripUntil) {
     $('strip').innerHTML = `<span class="lbl">${strip.who === you ? '내가' : esc(v.names[strip.who]).slice(0, 4)}</span>${strip.play !== undefined ? cd(strip.play) : ''}${strip.flip !== undefined ? '<span class="ar">▼</span>' + cd(strip.flip) : ''}`;
   } else $('strip').innerHTML = '';
+  $('last').innerHTML = lastRow(lastTurn[opp], '상대') + lastRow(lastTurn[you], '나');
   // 나
   $('myCap').innerHTML = capHtml(v.cap[you], false);
   fitCap($('myCap'), 13);
@@ -180,7 +195,17 @@ function onEvents(evs, you) {
   let who = -1, pl, fl;
   const got = new Set();
   let big = '';
+  const rec = (w, fresh0) => { if (fresh0 || !lastTurn[w]) lastTurn[w] = { play: undefined, flip: undefined, got: [], stolen: [], special: [], expect: false }; return lastTurn[w]; };
   for (const e of evs) {
+    if (e.t === 'play') rec(e.who, true).play = e.card;
+    else if (e.t === 'flipOnly') rec(e.who, true);
+    else if (e.t === 'flip') rec(e.who, false).flip = e.card;
+    else if (e.t === 'capture') rec(e.who, false).got = e.cards.slice();
+    else if (e.t === 'special' && e.kind !== 'chongtong') {
+      const r = rec(e.who, e.kind === 'bomb');
+      r.special.push(SPECIAL[e.kind] || '');
+      if (['jjok', 'ddadak', 'ppeokeat', 'jappeok', 'sseul', 'bomb'].includes(e.kind)) r.expect = true;
+    } else if (e.t === 'steal') rec(e.to, false).stolen.push(...e.cards);
     if (e.t === 'play') { who = e.who; pl = e.card; sfx.play(); }
     else if (e.t === 'flip') { who = e.who; fl = e.card; sfx.flip(); }
     else if (e.t === 'capture') { e.cards.forEach((c) => got.add(c)); sfx.take(); if (e.who === you) tutorialSignal('capture'); }
@@ -189,6 +214,7 @@ function onEvents(evs, you) {
     else if (e.t === 'go') { big = `${e.n}고!`; sfx.go(); }
     else if (e.t === 'stop') { big = '스톱!'; sfx.stop(); }
   }
+  for (const w of [0, 1]) { const r = lastTurn[w]; if (r) r.note = r.expect && !r.stolen.length; }
   if (who >= 0) { strip = { who, play: pl, flip: fl }; stripUntil = performance.now() + 1600; setTimeout(render, 1650); }
   fresh = got; setTimeout(() => { if (fresh === got) { fresh = new Set(); render(); } }, 900);
   if (big) toast(big);
@@ -242,7 +268,7 @@ function doAct(a) {
 function startCpu(level, carry = 1) {
   leaveOnline();
   clearTimeout(cpuTimer); clearTimeout(overTimer);
-  mode = level; phase = 'play'; selCard = null; strip = null; fresh = new Set(); busyUntil = 0;
+  mode = level; phase = 'play'; selCard = null; strip = null; lastTurn = [null, null]; fresh = new Set(); busyUntil = 0;
   st = L.newGame(Math.random, firstSeat, carry);
   hideOverlay(); render();
   if (st.carry > 1) toast(`이월 ×${st.carry}!`);
@@ -265,7 +291,7 @@ function cpuAct() {
 function showTitle() {
   leaveOnline();
   clearTimeout(cpuTimer); clearTimeout(overTimer);
-  mode = 'easy'; phase = 'title'; st = L.newGame(Math.random, 0); selCard = null; strip = null; fresh = new Set(); busyUntil = 0;
+  mode = 'easy'; phase = 'title'; st = L.newGame(Math.random, 0); selCard = null; strip = null; lastTurn = [null, null]; fresh = new Set(); busyUntil = 0;
   render();
   const on = loadJson(ONLINE_KEY);
   showOverlay(`
@@ -421,7 +447,7 @@ function applyRoom(r) {
   netDown = false; waitingNet = false;
   saveSession({ code: r.code, token: r.token });
   deadline = performance.now() + r.remain;
-  if (newGame) { seenSeq = r.seq; selCard = null; strip = null; fresh = new Set(); }
+  if (newGame) { seenSeq = r.seq; selCard = null; strip = null; lastTurn = [null, null]; fresh = new Set(); }
   if (r.state === 'waiting') { phase = 'title'; showWaiting(); render(); return; }
   phase = r.state === 'playing' ? 'play' : 'over';
   if (newGame && r.state === 'playing') { sfx.take(); say(''); if (r.carry > 1) toast(`이월 ×${r.carry}!`); }
