@@ -103,26 +103,14 @@
   .cap .grp { display:flex; padding-left:8px; min-width:12px; }
   .cap .grp .cd { margin-left:-12px; }
   .cap.small .cd { width:17px; height:26px; margin-left:-9px; }
-  .cap.small .cd .sy { font-size:11px; } .cap.small .cd .mn, .cap.small .cd .tp { display:none; }
   .cap.small .grp { padding-left:6px; }
   /* 카드 */
-  .cd { width:25px; height:38px; border-radius:5px; border:1.5px solid #2b1d52; position:relative; flex:none; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 0 rgba(0,0,0,.35); background:#fffaf0; overflow:hidden; }
-  .cd .sy { font-size:15px; line-height:1; }
-  .cd .mn { position:absolute; left:2px; top:1px; font-size:8px; color:#2b1d52; font-weight:700; }
-  .cd .tp { position:absolute; left:0; right:0; bottom:1px; text-align:center; font-size:7px; color:#2b1d52; line-height:1; }
-  .cd.gwang { background:linear-gradient(160deg,#fff3b0,#ffd23f); }
-  .cd.yeol { background:linear-gradient(160deg,#e3f2ff,#a9d3ff); }
-  .cd.tti { background:#fffaf0; }
-  .cd.tti::before { content:''; position:absolute; left:18%; right:18%; top:8%; bottom:16%; background:var(--ribbon,#ff6b6b); border-radius:2px; opacity:.9; }
-  .cd.tti .sy { position:relative; font-size:12px; color:#fff; }
-  .cd.pi { background:linear-gradient(160deg,#fffaf0,#efe3c8); }
-  .cd.ssang .tp { color:#c0392b; font-weight:700; }
+  .cd { width:25px; height:38px; border-radius:5px; border:1.5px solid #2b1d52; position:relative; flex:none; box-shadow:0 2px 0 rgba(0,0,0,.35); background:#fbf4e2; overflow:hidden; }
+  .cd svg.art { display:block; width:100%; height:100%; }
   .cd.back { background:repeating-linear-gradient(45deg,#c0392b 0 4px,#a93226 4px 8px); }
   #field .cd, #strip .cd { width:40px; height:60px; border-radius:7px; }
-  #field .cd .sy, #strip .cd .sy { font-size:22px; } #field .cd .mn, #strip .cd .mn { font-size:11px; } #field .cd .tp, #strip .cd .tp { font-size:10px; bottom:2px; }
   #hand { display:flex; justify-content:center; gap:2px; padding-top:10px; min-height:66px; }
   #hand .cd { width:32px; height:50px; cursor:pointer; transition:transform .12s; }
-  #hand .cd .sy { font-size:18px; } #hand .cd .mn { font-size:9px; }
   #hand .cd.sel { transform:translateY(-10px); box-shadow:0 0 0 3px #ffd23f, 0 5px 0 rgba(0,0,0,.35); }
   #hand .cd.dim { filter:brightness(.7); }
   #field { display:flex; gap:6px; align-items:flex-start; min-height:132px; position:relative; }
@@ -199,6 +187,7 @@
   </div>
 </div>
 <script src="logic.js"></script>
+<script src="cards.js"></script>
 <script src="game.js"></script>
 </body>
 </html>

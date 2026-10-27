@@ -9,20 +9,10 @@ const $ = (id) => document.getElementById(id);
 const T = { cpu: 900, over: 1300 };                          // 시간(ms). 시험용으로 줄일 수 있다
 
 // ---------- 카드 모양 ----------
-const MONTH_SY = ['🌲', '🌼', '🌸', '🍃', '🌷', '🌺', '🌾', '🌕', '🏵️', '🍁', '🍂', '☔'];
-const GWANG_SY = { 0: '🦩', 8: '🏮', 28: '🌕', 40: '🦚', 44: '☂️' };
-const YEOL_SY = { 4: '🐦', 12: '🕊️', 16: '🌉', 20: '🦋', 24: '🐗', 29: '🦢', 32: '🍶', 36: '🦌', 45: '🐦' };
-const RIBBON = { hong: '#ff6b6b', cho: '#4cae4f', cheong: '#4b86e8', plain: '#c49a6c' };
-const TTI_NAME = { hong: '홍단', cho: '초단', cheong: '청단', plain: '띠' };
+// 그림은 cards.js (화투 48장 SVG). 카드 한 장은 그림 한 장이고, 눈이 아닌 사람을 위한 이름만 붙인다
 function cd(id, cls = '') {
   const c = L.card(id);
-  let sy = MONTH_SY[c.m], tp = '';
-  if (c.kind === 'gwang') { sy = GWANG_SY[id]; tp = '광'; }
-  else if (c.kind === 'yeol') { sy = YEOL_SY[id] || sy; tp = '열끗'; }
-  else if (c.kind === 'tti') { tp = TTI_NAME[c.tti]; }
-  else tp = c.ssang ? '쌍피' : '피';
-  const style = c.kind === 'tti' ? ` style="--ribbon:${RIBBON[c.tti]}"` : '';
-  return `<div class="cd ${c.kind}${c.ssang ? ' ssang' : ''}${cls ? ' ' + cls : ''}" data-id="${id}"${style}><span class="mn">${c.m + 1}</span><span class="sy">${sy}</span><span class="tp">${tp}</span></div>`;
+  return `<div class="cd ${c.kind}${c.ssang ? ' ssang' : ''}${cls ? ' ' + cls : ''}" data-id="${id}" role="img" aria-label="${HWATU_ART.label(id)}">${HWATU_ART.use(id)}</div>`;
 }
 const back = () => '<div class="cd back"></div>';
 
