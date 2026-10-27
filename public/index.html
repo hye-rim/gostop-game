@@ -102,7 +102,8 @@
   .cap { display:flex; gap:8px; min-height:38px; align-items:flex-start; }
   .cap .grp { display:flex; padding-left:8px; min-width:12px; }
   .cap .grp .cd { margin-left:-12px; }
-  .cap.small .cd { width:17px; height:26px; margin-left:-9px; }
+  .cap.small { min-height:34px; }
+  .cap.small .cd { width:22px; height:34px; margin-left:-8px; border-radius:4px; }
   .cap.small .grp { padding-left:6px; }
   /* 카드 */
   .cd { width:25px; height:38px; border-radius:5px; border:1.5px solid #2b1d52; position:relative; flex:none; box-shadow:0 2px 0 rgba(0,0,0,.35); background:#fbf4e2; overflow:hidden; }
@@ -110,7 +111,7 @@
   .cd.back { background:repeating-linear-gradient(45deg,#c0392b 0 4px,#a93226 4px 8px); }
   #field .cd, #strip .cd { width:40px; height:60px; border-radius:7px; }
   #hand { display:flex; justify-content:center; gap:2px; padding-top:10px; min-height:66px; }
-  #hand .cd { width:32px; height:50px; cursor:pointer; transition:transform .12s; }
+  #hand .cd { width:32px; height:50px; flex:0 1 32px; min-width:0; cursor:pointer; transition:transform .12s; }
   #hand .cd.sel { transform:translateY(-10px); box-shadow:0 0 0 3px #ffd23f, 0 5px 0 rgba(0,0,0,.35); }
   #hand .cd.dim { filter:brightness(.7); }
   #field { display:flex; gap:6px; align-items:flex-start; min-height:132px; position:relative; }

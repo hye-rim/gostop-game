@@ -100,6 +100,15 @@ function capHtml(ids, small) {
   const groups = KINDS.map((k) => ids.filter((id) => L.card(id).kind === k).sort((a, b) => a - b));
   return groups.map((g) => (g.length ? `<div class="grp">${g.map((id) => cd(id, fresh.has(id) ? 'fresh' : '')).join('')}</div>` : '')).join('') || (small ? '' : '<span style="color:rgba(255,255,255,.5);font-size:12px">먹은 패가 여기 쌓여요</span>');
 }
+// 먹은 패는 겹쳐 쌓되, 많이 먹어도 한 줄 안에서 종류마다 첫 장은 온전히 보이고 나머지는 겹친 폭만 줄여서 맞춘다
+function fitCap(el, natural) {
+  const cds = el.querySelectorAll('.cd');
+  if (!cds.length) return;
+  const grps = el.querySelectorAll('.grp'), n = cds.length, w = cds[0].offsetWidth || 25;
+  const room = el.clientWidth - (grps.length - 1) * 8 - grps.length * w;
+  const step = Math.max(5, Math.min(natural, n > grps.length ? room / (n - grps.length) : natural));
+  grps.forEach((g) => { g.style.paddingLeft = '0'; g.querySelectorAll('.cd').forEach((c, i) => { c.style.marginLeft = i ? `${step - w}px` : '0'; }); });
+}
 function scoreText(ids) {
   const s = L.scoreOf(ids);
   return `광${s.counts.gwang} 열${s.counts.yeol} 띠${s.counts.tti} 피${s.counts.pi} <b>${s.total}점</b>`;
@@ -112,6 +121,7 @@ function render() {
   const goTxt = (p) => (v.goCount[p] ? ` · ${v.goCount[p]}고` : '');
   $('oppWho').innerHTML = `<span class="nm">${esc(v.names[opp])}</span><span class="sc">${scoreText(v.cap[opp])}${goTxt(opp)}</span><span class="hc">${Array.from({ length: Math.min(10, v.handN[opp]) }, () => '<i></i>').join('')}</span>`;
   $('oppCap').innerHTML = capHtml(v.cap[opp], true);
+  fitCap($('oppCap'), 14);
   // 더미 · 바닥
   $('deck').innerHTML = `${v.deckN ? back() : '<div class="cd" style="opacity:.25"></div>'}<span>더미 ${v.deckN}</span>`;
   const canPlay = myTurn(v) && v.phase === 'play';
@@ -124,6 +134,7 @@ function render() {
   } else $('strip').innerHTML = '';
   // 나
   $('myCap').innerHTML = capHtml(v.cap[you], false);
+  fitCap($('myCap'), 13);
   $('meWho').innerHTML = `<span class="nm">${esc(v.names[you])}</span><span class="sc">${scoreText(v.cap[you])}${goTxt(you)}</span>`;
   $('hand').innerHTML = v.hand.slice().sort((a, b) => a - b).map((id) => cd(id, `${selCard === id ? 'sel' : ''}${v.turn === v.you && v.phase === 'play' ? '' : ' dim'}`)).join('');
   // 흔들기 · 폭탄 버튼
@@ -529,6 +540,7 @@ if (loadSession()) {
 else showTitle();
 
 /* @test-hooks:start */
+window.addEventListener('resize', () => { fitCap($('oppCap'), 14); fitCap($('myCap'), 13); });
 window.__gs = { setState(s) { st = s; mode = 'easy'; phase = 'play'; totals = [0, 0]; hideOverlay(); render(); afterLocal(); }, showResult, get st() { return st; }, get mode() { return mode; }, get phase() { return phase; }, get room() { return room; }, get selCard() { return selCard; }, T, doAct, startCpu, render, view, L };
 /* @test-hooks:end */
 })();
