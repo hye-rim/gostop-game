@@ -445,3 +445,32 @@ test('chongtong with a carry-over is worth ten times the carry', () => {
   assert.strictEqual(st.result.points, L.CHONGTONG_POINTS * 4);
   assert.ok(st.result.mult.includes('나가리 이월 ×4'));
 });
+
+test('go is not offered when my own hand is empty, even if the opponent still holds cards', () => {
+  // 광 5장을 모은 사람이 마지막 손패를 냈다: 상대 손패가 남아 있어도 고는 없고 바로 스톱
+  const gwang = [id(1, 0), id(3, 0), id(8, 0), id(11, 0), id(12, 0)];
+  const st = S({ h0: [id(5, 2)], h1: [id(9, 2), id(10, 2)], floor: [id(6, 2)], flip: id(7, 2), cap0: gwang });
+  assert.ok(play(st, id(5, 2)));
+  assert.strictEqual(st.phase, 'over');
+  assert.strictEqual(st.result.winner, 0);
+  assert.strictEqual(st.result.reason, 'stop');
+  assert.ok(!L.legalActions(st).some((a) => a.type === 'go'));
+});
+
+test('go is not offered on a flip-only turn after my hand ran out', () => {
+  // 손패를 폭탄 등으로 먼저 비운 사람이 더미만 뒤집다 7점이 되어도 고는 없다
+  const st = S({ h0: [], h1: [id(5, 3), id(6, 3)], floor: [id(12, 1)], cap0: [id(1, 0), id(3, 0), id(8, 0), id(11, 0)], turn: 1 });
+  st.deck = [id(12, 0), id(2, 3)];                       // 맨 위(끝)는 상대가 뒤집고, 그다음 장을 내가 뒤집는다
+  assert.ok(play(st, id(5, 3)));
+  assert.strictEqual(st.phase, 'over');
+  assert.strictEqual(st.result.winner, 0);
+  assert.strictEqual(st.result.reason, 'stop');
+});
+
+test('go is still offered while my hand has cards', () => {
+  const gwang = [id(1, 0), id(3, 0), id(8, 0), id(11, 0), id(12, 0)];
+  const st = S({ h0: [id(5, 2), id(5, 3)], h1: [id(9, 2), id(10, 2)], floor: [id(6, 2)], flip: id(7, 2), cap0: gwang });
+  assert.ok(play(st, id(5, 2)));
+  assert.strictEqual(st.phase, 'gostop');
+  assert.deepStrictEqual(L.legalActions(st).map((a) => a.type), ['go', 'stop']);
+});
