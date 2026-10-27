@@ -9,9 +9,11 @@
 // - 점수가 7점 이상이면 고(계속) 또는 스톱(끝내고 점수 받기). 고를 하면 점수가 늘지만 상대가 먼저 나면 고박
 // - 점수: 광(3광 3점 · 비광 포함 2점 · 4광 4점 · 5광 15점) · 열끗(5장 1점, 한 장마다 +1, 고도리 5점) · 띠(5장 1점, 한 장마다 +1, 홍단·청단·초단 각 3점) · 피(10장 1점, 한 장마다 +1, 쌍피는 2장)
 // - 박: 피박 · 광박 · 멍박(열끗 7장 이상)은 각 x2
+// - 나가리(무승부)가 나면 다음 판 점수에 x2 (또 나가리면 x4, 한도 x8)가 이월된다
 const LOGIC_GOSTOP = (() => {
 const THRESH = 7;                          // 이 점수 이상이면 고/스톱을 고른다
 const CHONGTONG_POINTS = 10;               // 총통으로 바로 이기면 받는 점수
+const CARRY_MAX = 8;                       // 나가리가 이어질 때 이월 배수의 한도
 
 // ---------- 카드 ----------
 // 카드 번호 = 달 * 4 + 순서. 달 0~11 (1월~12월)
@@ -88,7 +90,8 @@ function scoreOf(ids) {
 // ---------- 상태 ----------
 // 같은 달 네 장이 있는 달(없으면 -1)
 function fourOf(list) { const n = new Array(12).fill(0); list.forEach((id) => n[monthOf(id)]++); return n.findIndex((x) => x === 4); }
-function newGame(rand = Math.random, first = 0) {
+// carry: 지난 판이 나가리(무승부)였으면 이 판의 점수에 곱하는 이월 배수 (2, 4, 8)
+function newGame(rand = Math.random, first = 0, carry = 1) {
   for (let tries = 0; tries < 200; tries++) {
     const deck = shuffle(CARDS.map((c) => c.id), rand);
     const hands = [deck.splice(0, 10), deck.splice(0, 10)];
@@ -98,7 +101,7 @@ function newGame(rand = Math.random, first = 0) {
     // 손패에 같은 달 네 장(총통)이 있으면 그 사람이 바로 이길지 계속할지 고른다 (선부터 차례로)
     const chong = [first, 1 - first].filter((p) => fourOf(hands[p]) >= 0);
     return {
-      deck, floor, hands, cap: [[], []], turn: chong.length ? chong[0] : first, first, phase: chong.length ? 'chongtong' : 'play', chong,
+      deck, floor, hands, cap: [[], []], turn: chong.length ? chong[0] : first, first, phase: chong.length ? 'chongtong' : 'play', chong, carry: Math.max(1, Math.floor(carry) || 1),
       ctx: null,                                   // 지금 진행 중인 차례의 임시 정보
       goCount: [0, 0], lastGo: [0, 0], shakes: [0, 0], bombs: [0, 0],
       shaken: {}, ppeok: {},                       // 흔들기 한 달 · 뻑이 쌓인 달 (누가 쌓았나)
@@ -250,10 +253,13 @@ function exhaust(st) {
   else endGame(st, -1, 'nagari');
 }
 
+// 다음 판의 이월 배수: 나가리(무승부)면 두 배(한도 8), 승부가 났으면 1
+const nextCarry = (carry, winner) => (winner < 0 ? Math.min(CARRY_MAX, Math.max(1, carry) * 2) : 1);
+
 // 끝내기: winner(-1 이면 무승부)가 스톱하거나 이긴 것으로 점수를 매긴다
 function endGame(st, winner, reason) {
   st.phase = 'over';
-  if (winner < 0) { st.result = { winner: -1, reason, points: 0 }; emit(st, { t: 'over', winner: -1, reason }); return; }
+  if (winner < 0) { st.result = { winner: -1, reason, points: 0, carry: st.carry, nextCarry: nextCarry(st.carry, -1) }; emit(st, { t: 'over', winner: -1, reason }); return; }
   const l = 1 - winner;
   const w = score(st, winner), lo = score(st, l);
   const goAdd = Math.min(st.goCount[winner], 2);
@@ -268,7 +274,8 @@ function endGame(st, winner, reason) {
   if (w.gwang > 0 && lo.counts.gwang === 0) mulBy('광박', 2);
   if (w.counts.yeol >= 7) mulBy('멍박', 2);
   if (st.goCount[l] > 0 && reason === 'stop') mulBy('고박', 2);
-  st.result = { winner, reason, base, goAdd, mult, multiplier: m, points: base * m, parts: w };
+  if (st.carry > 1) mulBy(`나가리 이월 ×${st.carry}`, st.carry);
+  st.result = { winner, reason, base, goAdd, mult, multiplier: m, points: base * m, parts: w, carry: st.carry, nextCarry: 1 };
   emit(st, { t: 'over', winner, reason, points: st.result.points });
 }
 
@@ -343,8 +350,9 @@ function apply(st, act) {
       const month = fourOf(st.hands[p]);
       emit(st, { t: 'special', kind: 'chongtong', who: p, month });
       st.phase = 'over';
-      st.result = { winner: p, reason: 'chongtong', base: CHONGTONG_POINTS, goAdd: 0, mult: [], multiplier: 1, points: CHONGTONG_POINTS, parts: scoreOf([]), month };
-      emit(st, { t: 'over', winner: p, reason: 'chongtong', points: CHONGTONG_POINTS });
+      const mult = st.carry > 1 ? [`나가리 이월 ×${st.carry}`] : [];
+      st.result = { winner: p, reason: 'chongtong', base: CHONGTONG_POINTS, goAdd: 0, mult, multiplier: st.carry, points: CHONGTONG_POINTS * st.carry, parts: scoreOf([]), month, carry: st.carry, nextCarry: 1 };
+      emit(st, { t: 'over', winner: p, reason: 'chongtong', points: st.result.points });
       return true;
     }
     case 'continue':
@@ -433,6 +441,6 @@ function aiPick(st, level = 'easy', rand = Math.random) {
   return best;
 }
 
-return { THRESH, CHONGTONG_POINTS, fourOf, GUKJIN, CARDS, MONTH_NAMES, HONG, CHO, CHEONG, BIRDS, monthOf, card, rng, shuffle, scoreOf, newGame, clone, score, legalActions, apply, aiPick, steal, countMonth };
+return { THRESH, CHONGTONG_POINTS, CARRY_MAX, nextCarry, fourOf, GUKJIN, CARDS, MONTH_NAMES, HONG, CHO, CHEONG, BIRDS, monthOf, card, rng, shuffle, scoreOf, newGame, clone, score, legalActions, apply, aiPick, steal, countMonth };
 })();
 if (typeof module !== 'undefined') module.exports = LOGIC_GOSTOP;

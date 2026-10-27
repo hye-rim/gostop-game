@@ -116,6 +116,8 @@ test('a deal: ten cards each, eight on the floor, and the opponent hand and the 
     assert.strictEqual(c.room.floor.length, 8);
     for (const key of Object.keys(c.room)) assert.ok(!['deck', 'hands', 'oppHand'].includes(key), 'leaked key ' + key);
   }
+  assert.strictEqual(a.room.carry, 1);
+  assert.strictEqual(a.room.nextCarry, 1);
   assert.ok(a.room.hand.every((x) => !b.room.hand.includes(x)), 'the two hands are disjoint');
   assert.notStrictEqual(a.room.you, b.room.you);
   assert.strictEqual(a.room.turn, a.room.first);
@@ -191,6 +193,7 @@ test('resigning ends the game and a rematch changes who goes first and keeps the
   assert.ok(await until(() => a.room.state === 'playing' && a.room.games === 2));
   assert.notStrictEqual(a.room.first, first, 'the first player alternates');
   assert.deepStrictEqual(a.room.total, total);
+  assert.strictEqual(a.room.carry, 1, 'a game decided by a resignation carries nothing');
   assert.strictEqual(a.room.hand.length, 10);
   closeAll(a, b);
 });

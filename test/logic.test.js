@@ -400,3 +400,48 @@ test('chongtong: the computer always takes it, and it shows up in about 1.3 perc
   const rate = n / hands;
   assert.ok(rate > 0.009 && rate < 0.018, 'chongtong rate ' + rate);
 });
+
+test('nagari carry-over: the next game is worth double, again double after another nagari, capped at eight', () => {
+  assert.strictEqual(L.newGame(L.rng(1), 0).carry, 1);
+  assert.strictEqual(L.newGame(L.rng(1), 0, 4).carry, 4);
+  assert.strictEqual(L.nextCarry(1, -1), 2);
+  assert.strictEqual(L.nextCarry(2, -1), 4);
+  assert.strictEqual(L.nextCarry(4, -1), 8);
+  assert.strictEqual(L.nextCarry(8, -1), L.CARRY_MAX);
+  assert.strictEqual(L.nextCarry(4, 0), 1, 'a decided game resets the carry');
+  assert.strictEqual(L.nextCarry(4, 1), 1);
+  // a nagari game reports what the next game carries
+  const end = (go) => { const st = S({ h0: [id(1, 2)], h1: [], floor: [id(10, 2)], flip: id(7, 3), fill: 1 }); st.goCount = go; st.carry = 2; st.turn = 0; play(st, id(1, 2)); return st.result; };
+  const nag = end([0, 0]);
+  assert.strictEqual(nag.winner, -1);
+  assert.strictEqual(nag.nextCarry, 4);
+  assert.strictEqual(end([0, 1]).nextCarry, 1, 'someone won, so nothing is carried');
+});
+
+test('nagari carry-over multiplies the winner points and is shown in the multiplier list', () => {
+  const st = S({});
+  st.carry = 2;
+  st.cap[0] = [id(1, 0), id(3, 0), id(8, 0), id(4, 1), id(5, 1), id(7, 1), id(6, 1), id(9, 1), id(2, 1)];
+  st.cap[1] = [id(1, 2)];
+  st.phase = 'gostop'; st.turn = 0;
+  const base = L.score(st, 0).total;
+  L.apply(st, { type: 'stop' });
+  assert.ok(st.result.mult.includes('나가리 이월 ×2'));
+  assert.strictEqual(st.result.points, base * st.result.multiplier);
+  assert.ok(st.result.multiplier >= 2);
+  // 같은 판인데 이월이 없으면 절반
+  const st2 = S({});
+  st2.cap[0] = st.cap[0].slice(); st2.cap[1] = st.cap[1].slice(); st2.phase = 'gostop'; st2.turn = 0;
+  L.apply(st2, { type: 'stop' });
+  assert.strictEqual(st.result.points, st2.result.points * 2);
+});
+
+test('chongtong with a carry-over is worth ten times the carry', () => {
+  const st = L.newGame(L.rng(201), 0, 4);
+  assert.strictEqual(st.phase, 'chongtong');
+  const p = st.turn;
+  L.apply(st, { type: 'chongtong' });
+  assert.strictEqual(st.result.winner, p);
+  assert.strictEqual(st.result.points, L.CHONGTONG_POINTS * 4);
+  assert.ok(st.result.mult.includes('나가리 이월 ×4'));
+});

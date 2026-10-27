@@ -120,6 +120,8 @@ function createRoom(isPrivate) {
     deadline: 0,
     turnTimer: null,
     total: [0, 0],           // 방에서의 누적 점수 (이기면 +, 지면 -)
+    carry: 1,                // 이번 판에 곱하는 나가리 이월 배수
+    nextCarry: 1,            // 이 판이 끝나면 다음 판에 이월될 배수
     rematch: new Set(),
     games: 0,
   };
@@ -136,7 +138,7 @@ function snapshot(room, seat) {
   room.seats.forEach((s) => { if (s.color >= 0) players[s.color] = { name: s.name, online: s.online }; });
   const snap = {
     code: room.code, isPrivate: room.isPrivate, token: seat.token, you: me, players,
-    state: room.state, games: room.games, first: room.first, total: room.total.slice(), rematch: [...room.rematch],
+    state: room.state, games: room.games, first: room.first, total: room.total.slice(), rematch: [...room.rematch], carry: room.carry, nextCarry: room.nextCarry,
     result: room.result, reason: room.result ? room.result.reason : '', winner: room.result ? room.result.winner : -1,
     events: room.events, seq: room.seq,
     remain: room.state === 'playing' ? Math.max(0, room.deadline - Date.now()) : 0,
@@ -169,7 +171,8 @@ function sitDown(room, client) {
 function startGame(room, firstGame) {
   // 선은 첫 판에는 무작위, 한 판 더부터는 번갈아
   room.first = firstGame ? crypto.randomInt(2) : 1 - room.first;
-  room.game = L.newGame(rand, room.first);
+  room.carry = room.nextCarry;
+  room.game = L.newGame(rand, room.first, room.carry);
   room.events = [];
   room.seq++;
   room.state = 'playing';
@@ -192,6 +195,7 @@ function finish(room, result) {
   clearTimeout(room.turnTimer);
   room.state = 'over';
   room.result = result;
+  room.nextCarry = L.nextCarry(room.carry, result.winner);
   if (result.winner >= 0 && result.points) { room.total[result.winner] += result.points; room.total[1 - result.winner] -= result.points; }
   pushRoom(room);
 }

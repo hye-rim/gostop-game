@@ -95,12 +95,12 @@ function view() {
     if (!room) return null;
     return { you: room.you, turn: room.turn, phase: room.phase, hand: room.hand, handN: room.handN, deckN: room.deckN, floor: room.floor, cap: room.cap, options: room.options,
       legal: room.legal || [], goCount: room.goCount, shakes: room.shakes, bombs: room.bombs, names: [0, 1].map((s) => (s === room.you ? '나' : ((room.players[s] || {}).name || '상대'))),
-      total: room.total, result: room.result, over: room.state === 'over', state: room.state };
+      total: room.total, result: room.result, over: room.state === 'over', state: room.state, carry: room.carry, nextCarry: room.nextCarry };
   }
   if (!st) return null;
   return { you: 0, turn: st.turn, phase: st.phase, hand: st.hands[0], handN: [st.hands[0].length, st.hands[1].length], deckN: st.deck.length, floor: st.floor, cap: st.cap,
     options: st.ctx && st.ctx.options, legal: st.turn === 0 ? L.legalActions(st) : [], goCount: st.goCount, shakes: st.shakes, bombs: st.bombs, names: ['나', '컴퓨터'],
-    total: totals, result: st.result, over: st.phase === 'over', state: st.phase === 'over' ? 'over' : 'playing' };
+    total: totals, result: st.result, over: st.phase === 'over', state: st.phase === 'over' ? 'over' : 'playing', carry: st.carry, nextCarry: st.result ? st.result.nextCarry : 1 };
 }
 const myTurn = (v) => !!v && v.state === 'playing' && v.turn === v.you && !netDown && !waitingNet && performance.now() >= busyUntil;
 
@@ -158,7 +158,7 @@ function renderHud(v = view()) {
   if (v && phase === 'play' && v.state === 'playing') {
     const sec = Math.max(0, Math.ceil((deadline - performance.now()) / 1000));
     if (online() && netDown) text = '연결 다시 붙이는 중…';
-    else if (v.turn === v.you) text = `내 차례${online() ? ` · ${sec}초` : ''}`;
+    else if (v.turn === v.you) text = `내 차례${online() ? ` · ${sec}초` : ''}${v.carry > 1 ? ` · 이월×${v.carry}` : ''}`;
     else text = online() ? `${v.names[v.turn]} 차례 · ${sec}초` : '컴퓨터 차례';
   }
   $('turn').textContent = text;
@@ -238,12 +238,13 @@ function doAct(a) {
 }
 
 // ---------- 컴퓨터 대전 ----------
-function startCpu(level) {
+function startCpu(level, carry = 1) {
   leaveOnline();
   clearTimeout(cpuTimer); clearTimeout(overTimer);
   mode = level; phase = 'play'; selCard = null; strip = null; fresh = new Set(); busyUntil = 0;
-  st = L.newGame(Math.random, firstSeat);
+  st = L.newGame(Math.random, firstSeat, carry);
   hideOverlay(); render();
+  if (st.carry > 1) toast(`이월 ×${st.carry}!`);
   afterLocal();
 }
 function afterLocal() {
@@ -338,6 +339,7 @@ function showResult() {
     <h2>${draw ? '🤝 나가리' : won ? '🎉 승리!' : '😵 패배'}</h2>
     <p>${esc(why)}</p>
     ${breakdown(r, v) ? `<div class="brk">${breakdown(r, v)}</div>` : ''}
+    ${draw && v.nextCarry > 1 ? `<p>다음 판은 점수 <b>×${v.nextCarry}</b>로 이월돼요! (나가리 이월)</p>` : ''}
     <span class="tag">누적 ${t[v.you] > 0 ? '+' : ''}${t[v.you]}점</span>
     <div class="col">${again}<div class="row"><button class="sub" data-act="view">판 보기</button><button class="sub" data-act="${online() ? 'leave' : 'home'}">${online() ? '나가기' : '처음으로'}</button></div></div>`);
   if (online()) {
@@ -421,7 +423,7 @@ function applyRoom(r) {
   if (newGame) { seenSeq = r.seq; selCard = null; strip = null; fresh = new Set(); }
   if (r.state === 'waiting') { phase = 'title'; showWaiting(); render(); return; }
   phase = r.state === 'playing' ? 'play' : 'over';
-  if (newGame && r.state === 'playing') { sfx.take(); say(''); }
+  if (newGame && r.state === 'playing') { sfx.take(); say(''); if (r.carry > 1) toast(`이월 ×${r.carry}!`); }
   if (!($('overlay').dataset.screen === 'confirm') && r.state !== 'over') {
     if (r.phase === 'gostop' && r.turn === r.you) showGoStop(); else if (r.phase === 'chongtong' && r.turn === r.you) showChongtong(); else hideOverlay();
   }
@@ -483,8 +485,8 @@ $('overlay').addEventListener('click', (e) => {
   btn.blur();
   $('overlay').dataset.screen = '';
   const act = btn.dataset.act;
-  if (act === 'cpu') { lastCpu = btn.dataset.lv; totals = [0, 0]; startCpu(lastCpu); }
-  else if (act === 'again') { firstSeat = st && st.result && st.result.winner >= 0 ? st.result.winner : 1 - firstSeat; startCpu(lastCpu); }
+  if (act === 'cpu') { lastCpu = btn.dataset.lv; totals = [0, 0]; startCpu(lastCpu, 1); }
+  else if (act === 'again') { firstSeat = st && st.result && st.result.winner >= 0 ? st.result.winner : 1 - firstSeat; startCpu(lastCpu, st && st.result ? st.result.nextCarry : 1); }
   else if (act === 'home') showTitle();
   else if (act === 'online') showOnline();
   else if (act === 'quick') { saveName(); net.send('quick'); }
@@ -537,6 +539,6 @@ if (loadSession()) {
 else showTitle();
 
 /* @test-hooks:start */
-window.__gs = { get st() { return st; }, get mode() { return mode; }, get phase() { return phase; }, get room() { return room; }, get selCard() { return selCard; }, T, doAct, startCpu, render, view, L };
+window.__gs = { setState(s) { st = s; mode = 'easy'; phase = 'play'; totals = [0, 0]; hideOverlay(); render(); afterLocal(); }, showResult, get st() { return st; }, get mode() { return mode; }, get phase() { return phase; }, get room() { return room; }, get selCard() { return selCard; }, T, doAct, startCpu, render, view, L };
 /* @test-hooks:end */
 })();
