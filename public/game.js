@@ -145,10 +145,11 @@ function render() {
 function hint(v) {
   let m = '';
   if (v.over) m = '';
-  else if (v.turn !== v.you) m = online() ? `${v.names[v.turn]}이(가) 생각 중…` : '컴퓨터 차례예요…';
+  else if (v.turn !== v.you) m = v.phase === 'chongtong' ? '상대가 총통을 확인하는 중…' : online() ? `${v.names[v.turn]}이(가) 생각 중…` : '컴퓨터 차례예요…';
   else if (v.phase === 'play') m = selCard === null ? '내 차례예요. 낼 패를 눌러요' : '같은 패를 다시 누르거나, 빛나는 바닥 패를 눌러 내요';
   else if (v.phase === 'chooseHand' || v.phase === 'chooseFlip') m = '같은 달 패가 두 장이에요. 가져올 패를 눌러요 (분홍 테두리)';
   else if (v.phase === 'gostop') m = '고 · 스톱을 골라요';
+  else if (v.phase === 'chongtong') m = '총통이에요! 바로 이길지 고르세요';
   say(m);
 }
 function renderHud(v = view()) {
@@ -172,7 +173,7 @@ function showOverlay(html) { $('overlay').innerHTML = html; $('overlay').classLi
 function hideOverlay() { $('overlay').classList.add('hidden'); }
 
 // ---------- 일어난 일 처리 (소리 · 알림 · 방금 낸 패) ----------
-const SPECIAL = { jjok: '쪽!', ddadak: '따닥!', ppeok: '뻑!', jappeok: '자뻑!', ppeokeat: '뻑 먹기!', sseul: '쓸!', bomb: '폭탄!', shake: '흔들기!' };
+const SPECIAL = { chongtong: '총통!', jjok: '쪽!', ddadak: '따닥!', ppeok: '뻑!', jappeok: '자뻑!', ppeokeat: '뻑 먹기!', sseul: '쓸!', bomb: '폭탄!', shake: '흔들기!' };
 function onEvents(evs, you) {
   if (!evs || !evs.length) return;
   let who = -1, pl, fl;
@@ -228,6 +229,7 @@ function doAct(a) {
   if (a.type === 'choose') tutorialSignal('choose');
   if (a.type === 'go') tutorialSignal('go');
   if (a.type === 'stop') tutorialSignal('stop');
+  if (a.type === 'chongtong') tutorialSignal('chongtong');
   selCard = null;
   if (online()) { waitingNet = true; net.send('act', { a }); render(); return; }
   if (!L.apply(st, a)) return;
@@ -248,6 +250,7 @@ function afterLocal() {
   render();
   if (st.phase === 'over') { overTimer = setTimeout(showResult, T.over); return; }
   if (st.phase === 'gostop' && st.turn === 0) { showGoStop(); return; }
+  if (st.phase === 'chongtong' && st.turn === 0) { showChongtong(); return; }
   if (st.turn === 1) cpuTimer = setTimeout(cpuAct, T.cpu);
 }
 function cpuAct() {
@@ -280,9 +283,21 @@ function showGoStop() {
     <div class="brk">광 ${s.gwang}점 · 열끗 ${s.yeol}점 · 띠 ${s.tti}점 · 피 ${s.pi}점<br>${n ? `지금 ${n}고 중이에요<br>` : ''}<b>고</b>: 계속해요 (점수가 늘어요, 상대가 먼저 나면 고박!)<br><b>스톱</b>: 여기서 끝내고 점수를 받아요</div>
     <div class="row"><button data-act="go">🔥 고</button><button data-act="stop">✋ 스톱</button></div>`);
 }
+function showChongtong() {
+  const v = view();
+  const m = L.fourOf(v.hand);
+  const four = v.hand.filter((id) => L.monthOf(id) === m);
+  showOverlay(`
+    <h2>총통이에요! 🎉</h2>
+    <div class="row" style="gap:4px">${four.map((id) => cd(id)).join('')}</div>
+    <p>손패에 <b>${m + 1}월 ${L.MONTH_NAMES[m]}</b> 네 장이 있어요!</p>
+    <div class="brk"><b>총통으로 승리</b>: 바로 끝내고 <b>${L.CHONGTONG_POINTS}점</b>을 받아요<br><b>계속 진행</b>: 그냥 평소처럼 쳐요</div>
+    <div class="col"><button data-act="chongtong">🏆 총통으로 승리 (${L.CHONGTONG_POINTS}점)</button><button class="sub" data-act="continue">▶ 계속 진행</button></div>`);
+}
 function breakdown(r, v) {
   const p = r.parts || {};
   const lines = [];
+  if (r.reason === 'chongtong') lines.push(`총통 (${(r.month || 0) + 1}월 네 장) <b>${r.points}점</b>`);
   if (r.reason === 'stop' || r.reason === 'exhaust') {
     lines.push(`광 ${p.gwang || 0} · 열끗 ${p.yeol || 0} · 띠 ${p.tti || 0} · 피 ${p.pi || 0} = ${p.total || 0}점`);
     if (r.goAdd) lines.push(`고 +${r.goAdd}점`);
@@ -299,6 +314,7 @@ function showResult() {
   const won = r.winner === v.you, draw = r.winner < 0;
   const why = {
     stop: won ? '스톱! 내가 점수를 냈어요' : '상대가 스톱했어요',
+    chongtong: won ? '총통! 손패 같은 달 네 장으로 바로 이겼어요' : '상대가 총통으로 바로 이겼어요',
     exhaust: won ? '패를 다 썼어요 — 고를 해서 내가 이겼어요' : '패를 다 썼어요 — 상대가 이겼어요',
     nagari: '아무도 못 났어요 (나가리)',
     resign: won ? '상대가 기권했어요' : '기권했어요',
@@ -407,7 +423,7 @@ function applyRoom(r) {
   phase = r.state === 'playing' ? 'play' : 'over';
   if (newGame && r.state === 'playing') { sfx.take(); say(''); }
   if (!($('overlay').dataset.screen === 'confirm') && r.state !== 'over') {
-    if (r.phase === 'gostop' && r.turn === r.you) showGoStop(); else hideOverlay();
+    if (r.phase === 'gostop' && r.turn === r.you) showGoStop(); else if (r.phase === 'chongtong' && r.turn === r.you) showChongtong(); else hideOverlay();
   }
   if (r.seq > seenSeq && !newGame) { onEvents(r.events, r.you); }
   seenSeq = r.seq;
@@ -491,6 +507,8 @@ $('overlay').addEventListener('click', (e) => {
   else if (act === 'resign') { net.send('resign'); hideOverlay(); }
   else if (act === 'close') hideOverlay();
   else if (act === 'go') { hideOverlay(); doAct({ type: 'go' }); }
+  else if (act === 'chongtong') { hideOverlay(); doAct({ type: 'chongtong' }); }
+  else if (act === 'continue') { hideOverlay(); doAct({ type: 'continue' }); }
   else if (act === 'stop') { hideOverlay(); doAct({ type: 'stop' }); }
 });
 let lastCpu = 'easy';

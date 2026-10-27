@@ -5,11 +5,13 @@
 // - 화투 48장(12달 x 4장). 손패 10장씩, 바닥 8장, 나머지 20장은 더미. 차례마다 ① 손패 한 장을 내서 같은 달 바닥 패와 맞추고 ② 더미 맨 위를 뒤집어 또 맞춘다
 // - 같은 달 두 장이 맞으면 가져온다. 바닥에 같은 달이 없으면 그냥 내려놓는다. 바닥에 같은 달이 두 장이면 하나를 고른다
 // - 특별한 일: 쪽 · 따닥 · 뻑 · 쓸 · 폭탄 · 흔들기 (아래 설명), 상대의 피를 한 장씩 뺏어 온다
+// - 총통: 처음 받은 손패에 같은 달 네 장이 있으면 바로 이겨서 10점을 받을 수도 있고, 그냥 계속할 수도 있다 (고르는 것은 그 사람)
 // - 점수가 7점 이상이면 고(계속) 또는 스톱(끝내고 점수 받기). 고를 하면 점수가 늘지만 상대가 먼저 나면 고박
 // - 점수: 광(3광 3점 · 비광 포함 2점 · 4광 4점 · 5광 15점) · 열끗(5장 1점, 한 장마다 +1, 고도리 5점) · 띠(5장 1점, 한 장마다 +1, 홍단·청단·초단 각 3점) · 피(10장 1점, 한 장마다 +1, 쌍피는 2장)
 // - 박: 피박 · 광박 · 멍박(열끗 7장 이상)은 각 x2
 const LOGIC_GOSTOP = (() => {
 const THRESH = 7;                          // 이 점수 이상이면 고/스톱을 고른다
+const CHONGTONG_POINTS = 10;               // 총통으로 바로 이기면 받는 점수
 
 // ---------- 카드 ----------
 // 카드 번호 = 달 * 4 + 순서. 달 0~11 (1월~12월)
@@ -84,16 +86,19 @@ function scoreOf(ids) {
 }
 
 // ---------- 상태 ----------
+// 같은 달 네 장이 있는 달(없으면 -1)
+function fourOf(list) { const n = new Array(12).fill(0); list.forEach((id) => n[monthOf(id)]++); return n.findIndex((x) => x === 4); }
 function newGame(rand = Math.random, first = 0) {
   for (let tries = 0; tries < 200; tries++) {
     const deck = shuffle(CARDS.map((c) => c.id), rand);
     const hands = [deck.splice(0, 10), deck.splice(0, 10)];
     const floor = deck.splice(0, 8);
-    const four = (list) => { const n = new Array(12).fill(0); list.forEach((id) => n[monthOf(id)]++); return n.some((x) => x === 4); };
-    if (four(hands[0]) || four(hands[1]) || four(floor)) continue;      // 처음부터 같은 달 네 장이면 다시 섞는다
+    if (fourOf(floor) >= 0) continue;                                   // 바닥에 같은 달 네 장이 깔리면 다시 섞는다
     hands.forEach((h) => h.sort((a, b) => a - b));
+    // 손패에 같은 달 네 장(총통)이 있으면 그 사람이 바로 이길지 계속할지 고른다 (선부터 차례로)
+    const chong = [first, 1 - first].filter((p) => fourOf(hands[p]) >= 0);
     return {
-      deck, floor, hands, cap: [[], []], turn: first, first, phase: 'play',
+      deck, floor, hands, cap: [[], []], turn: chong.length ? chong[0] : first, first, phase: chong.length ? 'chongtong' : 'play', chong,
       ctx: null,                                   // 지금 진행 중인 차례의 임시 정보
       goCount: [0, 0], lastGo: [0, 0], shakes: [0, 0], bombs: [0, 0],
       shaken: {}, ppeok: {},                       // 흔들기 한 달 · 뻑이 쌓인 달 (누가 쌓았나)
@@ -106,7 +111,7 @@ function clone(st) {
   return {
     ...st, deck: st.deck.slice(), floor: st.floor.slice(), hands: st.hands.map((h) => h.slice()), cap: st.cap.map((c) => c.slice()),
     ctx: st.ctx ? { ...st.ctx, held: st.ctx.held.slice(), gain: st.ctx.gain.slice(), options: st.ctx.options ? st.ctx.options.slice() : null } : null,
-    goCount: st.goCount.slice(), lastGo: st.lastGo.slice(), shakes: st.shakes.slice(), bombs: st.bombs.slice(), shaken: { ...st.shaken }, ppeok: { ...st.ppeok },
+    chong: (st.chong || []).slice(), goCount: st.goCount.slice(), lastGo: st.lastGo.slice(), shakes: st.shakes.slice(), bombs: st.bombs.slice(), shaken: { ...st.shaken }, ppeok: { ...st.ppeok },
     events: [], result: st.result ? { ...st.result } : null,
   };
 }
@@ -286,6 +291,7 @@ function legalActions(st) {
   }
   if (st.phase === 'chooseHand' || st.phase === 'chooseFlip') return st.ctx.options.map((c) => ({ type: 'choose', card: c }));
   if (st.phase === 'gostop') return [{ type: 'go' }, { type: 'stop' }];
+  if (st.phase === 'chongtong') return [{ type: 'chongtong' }, { type: 'continue' }];
   return [];
 }
 
@@ -333,6 +339,19 @@ function apply(st, act) {
       }
       return true;
     }
+    case 'chongtong': {
+      const month = fourOf(st.hands[p]);
+      emit(st, { t: 'special', kind: 'chongtong', who: p, month });
+      st.phase = 'over';
+      st.result = { winner: p, reason: 'chongtong', base: CHONGTONG_POINTS, goAdd: 0, mult: [], multiplier: 1, points: CHONGTONG_POINTS, parts: scoreOf([]), month };
+      emit(st, { t: 'over', winner: p, reason: 'chongtong', points: CHONGTONG_POINTS });
+      return true;
+    }
+    case 'continue':
+      st.chong.shift();
+      if (st.chong.length) st.turn = st.chong[0];
+      else { st.phase = 'play'; st.turn = st.first; }
+      return true;
     case 'go': {
       st.goCount[p]++;
       st.lastGo[p] = score(st, p).total;
@@ -384,6 +403,7 @@ function aiPick(st, level = 'easy', rand = Math.random) {
   const acts = legalActions(st);
   if (!acts.length) return null;
   const p = st.turn;
+  if (st.phase === 'chongtong') return { type: 'chongtong' };           // 바로 이기는 게 이득
   if (st.phase === 'gostop') {
     const mine = score(st, p).total, opp = score(st, 1 - p).total;
     const handLeft = st.hands[p].length;
@@ -413,6 +433,6 @@ function aiPick(st, level = 'easy', rand = Math.random) {
   return best;
 }
 
-return { THRESH, GUKJIN, CARDS, MONTH_NAMES, HONG, CHO, CHEONG, BIRDS, monthOf, card, rng, shuffle, scoreOf, newGame, clone, score, legalActions, apply, aiPick, steal, countMonth };
+return { THRESH, CHONGTONG_POINTS, fourOf, GUKJIN, CARDS, MONTH_NAMES, HONG, CHO, CHEONG, BIRDS, monthOf, card, rng, shuffle, scoreOf, newGame, clone, score, legalActions, apply, aiPick, steal, countMonth };
 })();
 if (typeof module !== 'undefined') module.exports = LOGIC_GOSTOP;

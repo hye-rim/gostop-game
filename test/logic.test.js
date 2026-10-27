@@ -11,7 +11,7 @@ function S({ h0 = [], h1 = [], floor = [], flip, cap0 = [], cap1 = [], turn = 0,
   const rest = L.CARDS.map((c) => c.id).filter((x) => !used.has(x));
   st.hands = [h0.slice(), h1.slice()]; st.floor = floor.slice(); st.cap = [cap0.slice(), cap1.slice()];
   st.deck = rest.slice(0, fill).concat(flip === undefined ? [] : [flip]);
-  st.turn = turn; st.phase = 'play'; st.ctx = null; st.goCount = [0, 0]; st.lastGo = [0, 0]; st.shakes = [0, 0]; st.bombs = [0, 0]; st.shaken = {}; st.ppeok = {}; st.result = null;
+  st.turn = turn; st.phase = 'play'; st.chong = []; st.ctx = null; st.goCount = [0, 0]; st.lastGo = [0, 0]; st.shakes = [0, 0]; st.bombs = [0, 0]; st.shaken = {}; st.ppeok = {}; st.result = null;
   return st;
 }
 const play = (st, c) => L.apply(st, { type: 'play', card: c });
@@ -29,15 +29,15 @@ test('the deck has 48 distinct cards with the right mix', () => {
   for (let m = 0; m < 12; m++) assert.strictEqual(L.CARDS.filter((c) => c.m === m).length, 4);
 });
 
-test('a new deal has 10 + 10 + 8 + 20 cards and never starts with four of a month', () => {
+test('a new deal has 10 + 10 + 8 + 20 cards and the floor never starts with four of a month', () => {
   for (let g = 0; g < 200; g++) {
     const st = L.newGame(L.rng(g), g % 2);
     assert.strictEqual(st.hands[0].length, 10); assert.strictEqual(st.hands[1].length, 10);
     assert.strictEqual(st.floor.length, 8); assert.strictEqual(st.deck.length, 20);
     const all = [...st.deck, ...st.floor, ...st.hands[0], ...st.hands[1]];
     assert.strictEqual(new Set(all).size, 48);
-    for (const list of [st.hands[0], st.hands[1], st.floor]) for (let m = 0; m < 12; m++) assert.ok(L.countMonth(list, m) < 4);
-    assert.strictEqual(st.turn, g % 2);
+    for (let m = 0; m < 12; m++) assert.ok(L.countMonth(st.floor, m) < 4);
+    if (st.phase === 'play') assert.strictEqual(st.turn, g % 2);
   }
 });
 
@@ -334,4 +334,69 @@ test('the hard computer beats the easy one over a seeded series', () => {
   }
   assert.ok(hard > easy, `hard ${hard} easy ${easy}`);
   assert.ok(hp - ep > 0, `points hard ${hp} easy ${ep}`);
+});
+
+// 손패에 같은 달 네 장(총통)이 있는 판을 찾는다
+function dealWithChong(pred) {
+  for (let seed = 1; seed < 20000; seed++) {
+    const st = L.newGame(L.rng(seed), seed % 2);
+    if (pred(st)) return st;
+  }
+  throw new Error('no such deal');
+}
+
+test('chongtong: four of a month in the first hand lets that player choose', () => {
+  const st = dealWithChong((x) => x.phase === 'chongtong' && x.chong.length === 1);
+  const p = st.chong[0];
+  assert.ok(L.fourOf(st.hands[p]) >= 0);
+  assert.strictEqual(st.turn, p);
+  assert.deepStrictEqual(L.legalActions(st).map((a) => a.type).sort(), ['chongtong', 'continue']);
+  assert.ok(!L.apply(st, { type: 'play', card: st.hands[p][0] }), 'nothing else can be done before choosing');
+  assert.ok(!L.apply(st, { type: 'go' }));
+});
+
+test('chongtong: taking it ends the game at once with ten points and no multipliers', () => {
+  const st = dealWithChong((x) => x.phase === 'chongtong' && x.chong.length === 1);
+  const p = st.chong[0];
+  assert.ok(L.apply(st, { type: 'chongtong' }));
+  assert.strictEqual(st.phase, 'over');
+  assert.strictEqual(st.result.winner, p);
+  assert.strictEqual(st.result.reason, 'chongtong');
+  assert.strictEqual(st.result.points, L.CHONGTONG_POINTS);
+  assert.ok(st.events.some((e) => e.t === 'special' && e.kind === 'chongtong'));
+});
+
+test('chongtong: declining plays on normally, starting with the first player', () => {
+  const st = dealWithChong((x) => x.phase === 'chongtong' && x.chong.length === 1);
+  const first = st.first;
+  assert.ok(L.apply(st, { type: 'continue' }));
+  assert.strictEqual(st.phase, 'play');
+  assert.strictEqual(st.turn, first);
+  assert.strictEqual(st.chong.length, 0);
+  assert.strictEqual(st.hands[0].length + st.hands[1].length, 20);
+  assert.ok(L.legalActions(st).some((a) => a.type === 'play'));
+});
+
+test('chongtong: when both players have it, the first player decides first and the other gets a turn to decide', () => {
+  const st = dealWithChong((x) => x.chong.length === 2);
+  assert.deepStrictEqual(st.chong, [st.first, 1 - st.first]);
+  assert.strictEqual(st.turn, st.first);
+  L.apply(st, { type: 'continue' });
+  assert.strictEqual(st.phase, 'chongtong');
+  assert.strictEqual(st.turn, 1 - st.first);
+  L.apply(st, { type: 'continue' });
+  assert.strictEqual(st.phase, 'play');
+  assert.strictEqual(st.turn, st.first);
+});
+
+test('chongtong: the computer always takes it, and it shows up in about 1.3 percent of hands', () => {
+  let n = 0, hands = 0;
+  for (let seed = 1; seed <= 6000; seed++) {
+    const st = L.newGame(L.rng(seed), seed % 2);
+    hands += 2;
+    n += st.chong.length;
+    if (st.phase === 'chongtong') assert.deepStrictEqual(L.aiPick(st, 'easy'), { type: 'chongtong' });
+  }
+  const rate = n / hands;
+  assert.ok(rate > 0.009 && rate < 0.018, 'chongtong rate ' + rate);
 });

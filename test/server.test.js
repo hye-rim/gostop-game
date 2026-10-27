@@ -52,6 +52,13 @@ async function pair() {
   send(a, 'quick'); await until(() => a.queued);
   send(b, 'quick');
   assert.ok(await until(() => a.room && b.room && a.room.state === 'playing' && b.room.state === 'playing'), 'both players enter a playing room');
+  // 총통(손패 같은 달 네 장)이 걸린 판이면 둘 다 계속하기를 골라서 보통 판으로 만든다 (약 2.6% 의 판)
+  for (let i = 0; i < 3 && a.room.phase === 'chongtong'; i++) {
+    const m = mover(a, b), seq = m.room.seq;
+    assert.deepStrictEqual(m.room.legal.map((x) => x.type).sort(), ['chongtong', 'continue']);
+    send(m, 'act', { a: { type: 'continue' } });
+    await until(() => a.room.phase !== 'chongtong' || a.room.turn !== m.room.you || a.room.seq > seq, 2000);
+  }
   return [a, b];
 }
 const mover = (a, b) => (a.room.turn === a.room.you ? a : b);
