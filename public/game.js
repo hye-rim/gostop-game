@@ -152,7 +152,7 @@ function render() {
   const you = v.you, opp = 1 - you;
   // 상대
   const goTxt = (p) => (v.goCount[p] ? ` · ${v.goCount[p]}고` : '');
-  const shakeTxt = (p) => (v.shakes[p] ? ` · 흔들${v.shakes[p]}` : '') + (v.bombPass[p] ? ` · 뒤집기만 ${v.bombPass[p]}` : '');
+  const shakeTxt = (p) => (v.shakes[p] ? ` · 흔들${v.shakes[p]}` : '') + (v.bombPass[p] ? ` · 폭탄패 ${v.bombPass[p]}` : '');
   $('oppWho').innerHTML = `<span class="nm">${esc(v.names[opp])}</span><span class="sc">${scoreText(v.cap[opp], v.gukjin[opp])}${goTxt(opp)}${shakeTxt(opp)}</span><span class="hc">${Array.from({ length: Math.min(10, v.handN[opp]) }, () => '<i></i>').join('')}</span>`;
   $('oppCap').innerHTML = capHtml(v.cap[opp], true, v.gukjin[opp]);
   fitCap($('oppCap'), 14);
@@ -174,8 +174,10 @@ function render() {
   $('meWho').innerHTML = `<span class="nm">${esc(v.names[you])}</span><span class="sc">${scoreText(v.cap[you], v.gukjin[you])}${goTxt(you)}${shakeTxt(you)}</span>`;
   $('hand').innerHTML = v.hand.slice().sort((a, b) => a - b).map((id) => cd(id, `${selCard === id ? 'sel' : ''}${v.turn === v.you && v.phase === 'play' ? '' : ' dim'}`)).join('');
   // 흔들기 · 폭탄 버튼
-  const acts = canPlay ? v.legal.filter((a) => a.type === 'shake' || a.type === 'bomb') : [];
-  $('actions').innerHTML = acts.map((a) => `<button data-t="${a.type}" data-m="${a.month}">${a.type === 'bomb' ? '💣 폭탄' : '🌀 흔들기'} (${a.month + 1}월)</button>`).join('');
+  const acts = canPlay ? v.legal.filter((a) => a.type === 'shake' || a.type === 'bomb' || a.type === 'pass') : [];
+  $('actions').innerHTML = acts.map((a) => (a.type === 'pass'
+    ? `<button data-t="pass" class="sub">🂠 폭탄패로 뒤집기만 (${v.bombPass[you]}장)</button>`
+    : `<button data-t="${a.type}" data-m="${a.month}">${a.type === 'bomb' ? '💣 폭탄' : '🌀 흔들기'} (${a.month + 1}월)</button>`)).join('');
   renderHud(v);
   hint(v);
 }
@@ -183,7 +185,7 @@ function hint(v) {
   let m = '';
   if (v.over) m = '';
   else if (v.turn !== v.you) m = v.phase === 'chongtong' ? '상대가 총통을 확인하는 중…' : v.phase === 'gukjin' ? '상대가 국진 쓰임을 고르는 중…' : online() ? `${v.names[v.turn]}이(가) 생각 중…` : '컴퓨터 차례예요…';
-  else if (v.phase === 'play') m = selCard === null ? '내 차례예요. 낼 패를 눌러요' : '같은 패를 다시 누르거나, 빛나는 바닥 패를 눌러 내요';
+  else if (v.phase === 'play') m = selCard === null ? (v.bombPass[v.you] ? '내 차례예요. 낼 패를 누르거나, 먹을 게 없으면 폭탄패로 뒤집기만 해요' : '내 차례예요. 낼 패를 눌러요') : '같은 패를 다시 누르거나, 빛나는 바닥 패를 눌러 내요 (같은 달이 두 장이면 먹을 패를 눌러요)';
   else if (v.phase === 'chooseHand' || v.phase === 'chooseFlip') m = '같은 달 패가 두 장이에요. 가져올 패를 눌러요 (분홍 테두리)';
   else if (v.phase === 'gukjin') m = '국진(9월 술잔)을 열끗으로 쓸지 쌍피로 쓸지 골라요';
   else if (v.phase === 'gostop') m = '고 · 스톱을 골라요';
@@ -371,7 +373,7 @@ function onEvents(evs, you) {
   const rec = (w, fresh0) => { if (fresh0 || !lastTurn[w]) lastTurn[w] = { play: undefined, flip: undefined, got: [], stolen: [], special: [], expect: false }; return lastTurn[w]; };
   for (const e of evs) {
     if (e.t === 'play') { const prev = lastTurn[e.who], r0 = rec(e.who, true); r0.play = e.card; if (prev && prev.shakeOnly) { r0.special = prev.special.slice(); r0.shakeCards = prev.shakeCards; } }   // 흔든 뒤 패를 내도 흔든 기록은 남긴다
-    else if (e.t === 'flipOnly') rec(e.who, true);
+    else if (e.t === 'flipOnly') { const r0 = rec(e.who, true); if (e.pass) r0.special.push('폭탄패'); }
     else if (e.t === 'flip') rec(e.who, false).flip = e.card;
     else if (e.t === 'capture') rec(e.who, false).got = e.cards.slice();
     else if (e.t === 'special' && e.kind !== 'chongtong') {
@@ -419,12 +421,12 @@ $('floor').addEventListener('click', (e) => {
     if ((v.options || []).includes(id)) doAct({ type: 'choose', card: id });
     return;
   }
-  if (v.phase === 'play' && selCard !== null && L.monthOf(id) === L.monthOf(selCard)) doAct({ type: 'play', card: selCard });
+  if (v.phase === 'play' && selCard !== null && L.monthOf(id) === L.monthOf(selCard)) doAct({ type: 'play', card: selCard, pick: id });   // 바닥에 같은 달이 두 장이어도 찍은 패를 먹는다
 });
 $('actions').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
-  doAct({ type: b.dataset.t, month: Number(b.dataset.m) });
+  doAct(b.dataset.m === undefined ? { type: b.dataset.t } : { type: b.dataset.t, month: Number(b.dataset.m) });
 });
 addEventListener('keydown', (e) => { if (e.target.tagName !== 'INPUT' && e.code === 'KeyM') toggleMute(); });
 

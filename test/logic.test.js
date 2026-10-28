@@ -153,7 +153,7 @@ test('ddadak: two on the floor, the hand card and the flip take both pairs', () 
 });
 
 test('sseul: taking the last cards from the floor steals a pi', () => {
-  const st = S({ h0: [id(1, 2)], h1: [id(9, 2)], floor: [id(1, 3)], flip: id(1, 0) === 0 ? id(7, 3) : id(7, 3), cap1: [id(3, 2), id(3, 3)] });
+  const st = S({ h0: [id(1, 2), id(2, 2)], h1: [id(9, 2)], floor: [id(1, 3)], flip: id(7, 3), cap1: [id(3, 2), id(3, 3)] });   // 손에 다른 패가 남아 있어야 쓸이다
   st.floor = [id(1, 3), id(7, 2)];                                            // flip 7-3 will take 7-2 as well
   assert.ok(play(st, id(1, 2)));
   assert.ok(kinds(st).includes('sseul'));
@@ -538,53 +538,132 @@ test('shake: the shaken cards are shown to everyone in the event', () => {
   assert.strictEqual(ev.who, 0);
 });
 
-// ---------- 폭탄: 세 장을 한꺼번에 냈으니 다음 두 차례는 더미만 뒤집는다 ----------
+// ---------- 폭탄: 폭탄패 두 장을 받아, 원할 때 손패 없이 더미만 뒤집을 수 있다 ----------
 const bombState = () => S({ h0: [id(6, 0), id(6, 1), id(6, 2), id(1, 2), id(2, 2), id(3, 2)], h1: [id(9, 2), id(10, 2), id(11, 2), id(4, 2), id(5, 2), id(7, 2)], floor: [id(6, 3), id(12, 1)], flip: id(8, 2), fill: 14 });
 
-test('bomb: the bomber then has two flip-only turns and keeps the hand untouched', () => {
+test('bomb: the bomber gets two bomb cards and is never forced to use them', () => {
   const st = bombState();
   assert.ok(L.apply(st, { type: 'bomb', month: 5 }));
   assert.deepStrictEqual(st.bombPass, [2, 0]);
   assert.strictEqual(st.hands[0].length, 3);
   assert.strictEqual(st.turn, 1);
-  const deck0 = st.deck.length;
-  // 상대가 한 장 낼 때마다 폭탄 낸 사람의 차례는 더미 뒤집기만 하고 곧바로 상대 차례로 돌아온다
-  for (const [n, pass] of [[1, 1], [2, 0]]) {
-    assert.ok(play(st, st.hands[1][0]));
-    assert.ok(st.events.some((e) => e.t === 'flipOnly' && e.who === 0), `flip-only turn ${n}`);
-    assert.strictEqual(st.bombPass[0], pass);
-    assert.strictEqual(st.hands[0].length, 3, 'the bomber does not have to play');
-    assert.strictEqual(st.turn, 1, 'the turn comes back to the other player');
-    assert.strictEqual(st.deck.length, deck0 - 2 * n, 'one flip each');
-  }
-  // 세 번째부터는 폭탄 낸 사람도 보통대로 패를 낸다
+  // 상대가 내도 폭탄 낸 사람의 차례는 저절로 지나가지 않고 내가 고른다
   assert.ok(play(st, st.hands[1][0]));
-  assert.ok(!st.events.some((e) => e.t === 'flipOnly'));
-  assert.strictEqual(st.turn, 0);
-  assert.strictEqual(st.phase, 'play');
-  assert.ok(L.legalActions(st).some((a) => a.type === 'play'));
+  assert.strictEqual(st.turn, 0, 'it is the bomber turn again, nothing was skipped');
+  assert.ok(!st.events.some((e) => e.t === 'flipOnly' && e.who === 0));
+  assert.strictEqual(st.hands[0].length, 3);
+  const legal = L.legalActions(st).map((a) => a.type);
+  assert.ok(legal.includes('play') && legal.includes('pass'), 'play a card or use a bomb card');
+  // 폭탄패를 내면 손패는 그대로, 더미만 뒤집는다
+  const deck0 = st.deck.length;
+  assert.ok(L.apply(st, { type: 'pass' }));
+  assert.ok(st.events.some((e) => e.t === 'flipOnly' && e.who === 0 && e.pass));
+  assert.deepStrictEqual(st.bombPass, [1, 0]);
+  assert.strictEqual(st.hands[0].length, 3);
+  assert.strictEqual(st.deck.length, deck0 - 1);
+  assert.strictEqual(st.turn, 1);
 });
 
-test('bomb: a whole game with bombs ends with both sides having played the same number of turns', () => {
-  let bombs = 0;
+test('bomb: a pass is only legal while bomb cards are left', () => {
+  const st = S({ h0: [id(1, 2)], h1: [id(9, 2)], floor: [id(10, 2)], flip: id(7, 3) });
+  assert.ok(!L.legalActions(st).some((a) => a.type === 'pass'));
+  assert.ok(!L.apply(st, { type: 'pass' }));
+  const b = bombState(); L.apply(b, { type: 'bomb', month: 5 }); play(b, b.hands[1][0]);
+  L.apply(b, { type: 'pass' }); play(b, b.hands[1][0]);
+  L.apply(b, { type: 'pass' });
+  assert.deepStrictEqual(b.bombPass, [0, 0]);
+  play(b, b.hands[1][0]);
+  assert.ok(!L.legalActions(b).some((a) => a.type === 'pass'), 'both bomb cards are used up');
+  assert.ok(!L.apply(b, { type: 'pass' }));
+});
+
+test('bomb: when the hand runs out, the leftover bomb cards are used by flipping the deck', () => {
+  const st = S({ h0: [id(6, 0), id(6, 1), id(6, 2)], h1: [id(9, 2), id(10, 2), id(11, 2)], floor: [id(6, 3), id(1, 2)], flip: id(8, 2), fill: 10 });
+  L.apply(st, { type: 'bomb', month: 5 });
+  assert.strictEqual(st.hands[0].length, 0);
+  assert.deepStrictEqual(st.bombPass, [2, 0]);
+  const deckBefore = st.deck.length;
+  assert.ok(play(st, st.hands[1][0]));
+  assert.strictEqual(st.turn, 1, 'the bomber had no hand, so it only flipped and the turn came back');
+  assert.deepStrictEqual(st.bombPass, [1, 0], 'one bomb card was used up');
+  assert.strictEqual(st.deck.length, deckBefore - 2);
+});
+
+test('bomb: games with bombs end, and both sides use up their cards', () => {
+  let bombs = 0, passes = 0;
   for (let g = 0; g < 400; g++) {
     const r = L.rng(g + 5), st = L.newGame(r, g % 2);
     let guard = 0;
-    while (st.phase !== 'over' && guard++ < 200) {
+    while (st.phase !== 'over' && guard++ < 250) {
       const acts = L.legalActions(st);
       let a = acts.find((x) => x.type === 'bomb') || acts[Math.floor(r() * acts.length)];
-      if (st.phase === 'gostop') a = { type: 'stop' };
+      if (st.phase === 'gostop') a = { type: 'go' };
       if (a.type === 'bomb') bombs++;
+      if (a.type === 'pass') passes++;
       assert.ok(L.apply(st, a));
     }
     assert.strictEqual(st.phase, 'over', `game ${g} ends`);
-    assert.ok(st.bombPass.every((n) => n >= 0 && n <= 4), 'pass count stays sane');
+    if (st.result.reason === 'exhaust' || st.result.reason === 'nagari') {
+      assert.deepStrictEqual([st.hands[0].length, st.hands[1].length, st.bombPass[0], st.bombPass[1], st.deck.length], [0, 0, 0, 0, 0], 'everything was played');
+    }
   }
-  assert.ok(bombs > 20, `bombs happened (${bombs})`);
+  assert.ok(bombs > 20 && passes > 5, `bombs ${bombs}, passes ${passes}`);
 });
 
-test('clone keeps the bomb pass counts', () => {
+test('clone keeps the bomb card counts', () => {
   const st = bombState();
   L.apply(st, { type: 'bomb', month: 5 });
   assert.deepStrictEqual(L.clone(st).bombPass, [2, 0]);
+});
+
+test('the computer saves its hand cards: with a bomb card and nothing to match it flips only', () => {
+  const st = S({ h0: [id(1, 2), id(2, 2)], h1: [id(9, 2)], floor: [id(10, 2), id(11, 2)], flip: id(7, 3) });
+  st.bombPass = [1, 0];
+  assert.deepStrictEqual(L.aiPick(st, 'hard'), { type: 'pass' });
+  const m = S({ h0: [id(1, 2), id(10, 3)], h1: [id(9, 2)], floor: [id(10, 2), id(11, 2)], flip: id(7, 3) });
+  m.bombPass = [1, 0];
+  assert.deepStrictEqual(L.aiPick(m, 'hard'), { type: 'play', card: id(10, 3) }, 'a card that matches the floor is played instead');
+});
+
+// ---------- 쓸: 마지막 손패로는 쓸이 되지 않는다 ----------
+test('sseul: clearing the floor with the last hand card is not a sweep, with other cards left it is', () => {
+  const last = S({ h0: [id(1, 2)], h1: [id(9, 2), id(10, 2)], floor: [id(1, 3)], flip: id(7, 3), cap1: [id(3, 2), id(3, 3)] });
+  last.floor = [id(1, 3), id(7, 2)];                                          // 뒤집는 7월이 바닥 7월을 가져가 바닥이 빈다
+  assert.ok(play(last, id(1, 2)));
+  assert.strictEqual(last.floor.length, 0);
+  assert.ok(!kinds(last).includes('sseul'), 'no sweep with an empty hand');
+  assert.strictEqual(last.cap[1].length, 2, 'nothing is stolen');
+  const more = S({ h0: [id(1, 2), id(2, 2)], h1: [id(9, 2), id(10, 2)], floor: [id(1, 3)], flip: id(7, 3), cap1: [id(3, 2), id(3, 3)] });
+  more.floor = [id(1, 3), id(7, 2)];
+  assert.ok(play(more, id(1, 2)));
+  assert.ok(kinds(more).includes('sseul'));
+  assert.strictEqual(more.cap[1].length, 1);
+});
+
+// ---------- 바닥 패를 미리 찍으면 두 장 중 고르기를 묻지 않는다 ----------
+test('play with a chosen floor card: no question when the floor holds two of the month', () => {
+  const mk = () => S({ h0: [id(6, 2), id(1, 2)], h1: [id(9, 2), id(10, 2)], floor: [id(6, 0), id(6, 1), id(10, 3)], flip: id(8, 2), fill: 6 });
+  const asked = mk();
+  assert.ok(L.apply(asked, { type: 'play', card: id(6, 2) }));
+  assert.strictEqual(asked.phase, 'chooseHand', 'without picking it asks');
+  const picked = mk();
+  assert.ok(L.apply(picked, { type: 'play', card: id(6, 2), pick: id(6, 1) }));
+  assert.notStrictEqual(picked.phase, 'chooseHand');
+  assert.ok(picked.cap[0].includes(id(6, 1)) && picked.cap[0].includes(id(6, 2)), 'took the picked one');
+  assert.ok(picked.floor.includes(id(6, 0)), 'the other one stays on the floor');
+  const wrong = mk();
+  assert.ok(L.apply(wrong, { type: 'play', card: id(6, 2), pick: id(10, 3) }));
+  assert.strictEqual(wrong.phase, 'chooseHand', 'a card of another month is ignored and it asks');
+  const one = S({ h0: [id(6, 2)], h1: [id(9, 2)], floor: [id(6, 0), id(10, 3)], flip: id(8, 2), fill: 6 });
+  assert.ok(L.apply(one, { type: 'play', card: id(6, 2), pick: id(10, 3) }));
+  assert.ok(one.cap[0].includes(id(6, 0)), 'one match: the pick is ignored');
+});
+
+// ---------- 컴퓨터가 국진을 어떻게 쓰는지 ----------
+test('the computer decides the gukjin by what it already holds, not always as a yeol', () => {
+  const pick = (cap) => { const st = S({}); st.phase = 'gukjin'; st.turn = 0; st.cap[0] = cap; return L.aiPick(st, 'easy').as; };
+  assert.strictEqual(pick([GUK, id(1, 2), id(1, 3), id(2, 2), id(2, 3), id(3, 2), id(3, 3), id(4, 2)]), 'ssang', 'lots of pi and no yeol');
+  assert.strictEqual(pick([GUK, id(2, 0), id(4, 0), id(5, 0), id(6, 0)]), 'yeol', 'four yeol already: the fifth scores');
+  assert.strictEqual(pick([GUK, id(2, 0), id(4, 0), id(1, 2), id(1, 3)]), 'yeol', 'a few yeol and a few pi: stay closer to five yeol');
+  assert.strictEqual(pick([GUK, id(1, 2), id(1, 3), id(2, 2), id(2, 3), id(3, 2), id(3, 3), id(4, 2), id(4, 3)]), 'ssang', 'eight pi plus two makes ten');
 });

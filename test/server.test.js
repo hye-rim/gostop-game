@@ -181,7 +181,7 @@ test('two computers play whole games through the server and both sides agree on 
   }
 });
 
-test('resigning ends the game and a rematch changes who goes first and keeps the running total', async () => {
+test('resigning ends the game and in the rematch the winner goes first and the running total is kept', async () => {
   await ready;
   const [a, b] = await pair();
   const first = a.room.first;
@@ -193,7 +193,8 @@ test('resigning ends the game and a rematch changes who goes first and keeps the
   const total = b.room.total.slice();
   send(a, 'rematch'); send(b, 'rematch');
   assert.ok(await until(() => a.room.state === 'playing' && a.room.games === 2));
-  assert.notStrictEqual(a.room.first, first, 'the first player alternates');
+  assert.strictEqual(a.room.first, b.room.you, 'the one who won (the other player resigned) goes first');
+  assert.ok(first === 0 || first === 1);
   assert.deepStrictEqual(a.room.total, total);
   assert.strictEqual(a.room.carry, 1, 'a game decided by a resignation carries nothing');
   assert.strictEqual(a.room.hand.length, 10);

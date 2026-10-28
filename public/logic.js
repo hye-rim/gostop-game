@@ -4,7 +4,7 @@
 //
 // - 화투 48장(12달 x 4장). 손패 10장씩, 바닥 8장, 나머지 20장은 더미. 차례마다 ① 손패 한 장을 내서 같은 달 바닥 패와 맞추고 ② 더미 맨 위를 뒤집어 또 맞춘다
 // - 같은 달 두 장이 맞으면 가져온다. 바닥에 같은 달이 없으면 그냥 내려놓는다. 바닥에 같은 달이 두 장이면 하나를 고른다
-// - 특별한 일: 쪽 · 따닥 · 뻑 · 쓸 · 폭탄 · 흔들기 (아래 설명), 상대의 피를 한 장씩 뺏어 온다. 폭탄은 세 장을 한꺼번에 내므로 그 사람은 다음 두 차례 패를 내지 않고 더미만 뒤집는다
+// - 특별한 일: 쪽 · 따닥 · 뻑 · 쓸 · 폭탄 · 흔들기 (아래 설명), 상대의 피를 한 장씩 뺏어 온다. 폭탄은 세 장을 한꺼번에 내므로 폭탄패(빈 패) 두 장을 받는다: 그 사람은 원하는 차례에 폭탄패를 내서 손패 없이 더미만 뒤집을 수 있다(안 써도 되지만 손패가 떨어지면 남은 폭탄패로 더미만 뒤집는다)
 // - 총통: 처음 받은 손패에 같은 달 네 장이 있으면 바로 이겨서 10점을 받을 수도 있고, 그냥 계속할 수도 있다 (고르는 것은 그 사람)
 // - 점수가 7점 이상이면 고(계속) 또는 스톱(끝내고 점수 받기). 고를 하면 점수가 늘지만 상대가 먼저 나면 고박. 내 손에 패가 없으면 고는 못 하고 바로 스톱
 // - 점수: 광(3광 3점 · 비광 포함 2점 · 4광 4점 · 5광 15점) · 열끗(5장 1점, 한 장마다 +1, 고도리 5점) · 띠(5장 1점, 한 장마다 +1, 홍단·청단·초단 각 3점) · 피(10장 1점, 한 장마다 +1, 쌍피는 2장)
@@ -105,7 +105,7 @@ function newGame(rand = Math.random, first = 0, carry = 1) {
     return {
       deck, floor, hands, cap: [[], []], turn: chong.length ? chong[0] : first, first, phase: chong.length ? 'chongtong' : 'play', chong, carry: Math.max(1, Math.floor(carry) || 1),
       ctx: null,                                   // 지금 진행 중인 차례의 임시 정보
-      goCount: [0, 0], lastGo: [0, 0], shakes: [0, 0], bombs: [0, 0], bombPass: [0, 0],   // bombPass: 폭탄으로 한꺼번에 낸 만큼 앞으로 더미만 뒤집는 차례 수
+      goCount: [0, 0], lastGo: [0, 0], shakes: [0, 0], bombs: [0, 0], bombPass: [0, 0],   // bombPass: 폭탄으로 받은 폭탄패(빈 패) 수. 내면 손패 없이 더미만 뒤집는다
       shaken: {}, ppeok: {},                       // 흔들기 한 달 · 뻑이 쌓인 달 (누가 쌓았나)
       gukjin: [null, null],                        // 국진(9월 열끗)을 가진 사람이 고른 쓰임: 'yeol' | 'ssang'
       events: [], seq: 0, plies: 0, result: null,
@@ -141,7 +141,7 @@ function steal(st, from, to, n, why) {
 // ---------- 한 차례 ----------
 function startCtx(card0, m) { return { card: card0, m, mode: null, held: [], gain: [], options: null, flip: null, ppeok: false }; }
 
-function playCard(st, id) {
+function playCard(st, id, pick) {
   const p = st.turn;
   remove(st.hands[p], id);
   const m = monthOf(id);
@@ -150,7 +150,11 @@ function playCard(st, id) {
   const fm = st.floor.filter((c) => monthOf(c) === m);
   if (fm.length === 0) { st.floor.push(id); ctx.mode = 'place'; }
   else if (fm.length === 1) { remove(st.floor, fm[0]); ctx.held = [id, fm[0]]; ctx.mode = 'pair'; }
-  else if (fm.length === 2) { ctx.mode = 'two'; ctx.options = fm; st.phase = 'chooseHand'; return; }
+  else if (fm.length === 2) {
+    ctx.mode = 'two';
+    if (pick !== undefined && fm.includes(pick)) { remove(st.floor, pick); ctx.held = [id, pick]; }      // 바닥 패를 미리 찍었으면 묻지 않는다
+    else { ctx.options = fm; st.phase = 'chooseHand'; return; }
+  }
   else {                                                  // 바닥에 석 장이 쌓여 있다(뻑): 네 장을 모두 가져온다
     fm.forEach((c) => remove(st.floor, c)); ctx.held = [id, ...fm]; ctx.mode = 'four';
     eatPpeok(st, p, m);
@@ -224,7 +228,7 @@ function finishTurn(st) {
 }
 function finishTurn2(st) {
   const p = st.turn, ctx = st.ctx, got = ctx.got || [];
-  if (got.length && !st.floor.length) {
+  if (got.length && !st.floor.length && st.hands[p].length > 0) {            // 마지막 패로 바닥을 비워도 쓸은 아니다
     emit(st, { t: 'special', kind: 'sseul', who: p });
     steal(st, 1 - p, p, 1, 'sseul');
   }
@@ -232,21 +236,22 @@ function finishTurn2(st) {
   st.plies++;
   const s = score(st, p).total;
   if (!ctx.ppeok && s >= THRESH && s > st.lastGo[p]) {
-    if (st.hands[p].length === 0) { emit(st, { t: 'stop', who: p }); endGame(st, p, 'stop'); return; }   // 내 손에 패가 없으면 고를 수 없다: 스톱 (상대 손패가 남았어도)
+    if (spare(st, p) === 0) { emit(st, { t: 'stop', who: p }); endGame(st, p, 'stop'); return; }   // 내 손에 패(폭탄패 포함)가 없으면 고를 수 없다: 스톱 (상대 손패가 남았어도)
     st.phase = 'gostop';
     return;
   }
   nextTurn(st);
 }
 
+// 아직 낼 수 있는 것: 손패 + 폭탄패
+const spare = (st, p) => st.hands[p].length + ((st.bombPass && st.bombPass[p]) || 0);
 function nextTurn(st) {
   st.phase = 'play';
   st.turn = 1 - st.turn;
-  if (!st.hands[0].length && !st.hands[1].length) { exhaust(st); return; }
-  // 폭탄으로 한꺼번에 낸 사람은 그만큼(두 번) 더미만 뒤집고, 손패가 없는 쪽도 더미만 뒤집고 넘어간다
-  const pass = (st.bombPass && st.bombPass[st.turn]) || 0;
-  if (pass > 0 || !st.hands[st.turn].length) {
-    if (pass > 0) st.bombPass[st.turn]--;
+  if (!spare(st, 0) && !spare(st, 1)) { exhaust(st); return; }
+  // 손패가 없는 쪽(폭탄으로 먼저 비운 경우 등)은 더미만 뒤집고 넘어간다. 폭탄패가 남았으면 한 장 쓴 셈이다
+  if (!st.hands[st.turn].length) {
+    if (st.bombPass[st.turn] > 0) st.bombPass[st.turn]--;
     st.ctx = startCtx(-1, -1); st.ctx.mode = 'flipOnly';
     emit(st, { t: 'flipOnly', who: st.turn });
     flipStep(st);
@@ -299,6 +304,7 @@ function legalActions(st) {
     const acts = [];
     const h = st.hands[p];
     for (const c of h) acts.push({ type: 'play', card: c });
+    if (st.bombPass && st.bombPass[p] > 0) acts.push({ type: 'pass' });
     for (let m = 0; m < 12; m++) {
       const inHand = countMonth(h, m), onFloor = countMonth(st.floor, m);
       if (inHand === 3 && onFloor === 1) acts.push({ type: 'bomb', month: m });
@@ -327,15 +333,22 @@ function apply(st, act) {
       emit(st, { t: 'special', kind: 'shake', who: p, month: act.month, cards: st.hands[p].filter((c) => monthOf(c) === act.month) });   // 흔든 패는 상대에게도 보여 준다
       return true;
     case 'play':
-      playCard(st, act.card);
+      playCard(st, act.card, Number.isInteger(act.pick) ? act.pick : undefined);
       return true;
+    case 'pass': {                                               // 폭탄패를 내서 손패 없이 더미만 뒤집는다
+      st.bombPass[p]--;
+      st.ctx = startCtx(-1, -1); st.ctx.mode = 'flipOnly';
+      emit(st, { t: 'flipOnly', who: p, pass: true });
+      flipStep(st);
+      return true;
+    }
     case 'bomb': {
       const m = act.month;
       const mine = st.hands[p].filter((c) => monthOf(c) === m);
       const fl = st.floor.filter((c) => monthOf(c) === m);
       mine.forEach((c) => remove(st.hands[p], c)); fl.forEach((c) => remove(st.floor, c));
       const ctx = (st.ctx = startCtx(mine[0], m)); ctx.mode = 'bomb'; ctx.held = [...mine, ...fl];
-      st.bombs[p]++; st.bombPass[p] += 2;                        // 세 장을 한꺼번에 냈으니 다음 두 차례는 더미만 뒤집는다
+      st.bombs[p]++; st.bombPass[p] += 2;                        // 세 장을 한꺼번에 냈으니 폭탄패 두 장을 받는다
       emit(st, { t: 'special', kind: 'bomb', who: p, month: m });
       steal(st, 1 - p, p, 1, 'bomb');
       flipStep(st);
@@ -424,15 +437,26 @@ function evalPlay(st, p, id, level) {
   return gainValue(st, p, [id, ...fm]) + 6;
 }
 
+// 국진을 열끗으로 쓸지 쌍피로 쓸지: 지금 점수가 더 높은 쪽, 같으면 어느 쪽이 점수 나는 데까지 더 가까워지는지 본다
+// (열끗은 5장, 피는 10장이 모여야 점수가 나고, 열끗 5장이 쌍피 2장보다 만들기 어렵다. 이미 가진 고도리 새도 열끗 쪽 점수를 키운다)
+function gukjinUse(st, p) {
+  const y = scoreOf(st.cap[p], 'yeol'), q = scoreOf(st.cap[p], 'ssang');
+  if (q.total !== y.total) return q.total > y.total ? 'ssang' : 'yeol';
+  const yeolNeed = Math.max(0, 5 - y.counts.yeol);                 // 열끗으로 쓰고도 5장까지 남은 장수
+  const piNeed = Math.max(0, 10 - q.counts.pi);                    // 쌍피로 쓰고도 10장까지 남은 장수
+  if (yeolNeed === 0 || piNeed === 0) return yeolNeed === 0 ? 'yeol' : 'ssang';
+  const birds = BIRDS.filter((id) => st.cap[p].includes(id)).length;
+  const yeolScore = yeolNeed / 5 - (birds >= 2 ? 0.25 : 0);        // 작을수록 가깝다
+  const piScore = piNeed / 10;
+  return piScore <= yeolScore ? 'ssang' : 'yeol';
+}
+
 function aiPick(st, level = 'easy', rand = Math.random) {
   const acts = legalActions(st);
   if (!acts.length) return null;
   const p = st.turn;
   if (st.phase === 'chongtong') return { type: 'chongtong' };           // 바로 이기는 게 이득
-  if (st.phase === 'gukjin') {                                           // 국진: 점수가 더 높은 쪽, 같으면 피가 7장 넘게 모였으면 쌍피
-    const y = scoreOf(st.cap[p], 'yeol'), q = scoreOf(st.cap[p], 'ssang');
-    return { type: 'gukjin', as: q.total > y.total || (q.total === y.total && y.counts.pi >= 7) ? 'ssang' : 'yeol' };
-  }
+  if (st.phase === 'gukjin') return { type: 'gukjin', as: gukjinUse(st, p) };
   if (st.phase === 'gostop') {
     const mine = score(st, p).total, opp = score(st, 1 - p).total;
     const handLeft = st.hands[p].length;
@@ -450,6 +474,8 @@ function aiPick(st, level = 'easy', rand = Math.random) {
   // 폭탄은 언제나 이득, 흔들기도 한다
   const bomb = acts.find((a) => a.type === 'bomb');
   if (bomb) return bomb;
+  // 폭탄패가 있고 어떤 손패도 바닥 패와 맞지 않으면 패를 버리지 말고 폭탄패로 뒤집기만 한다
+  if (acts.some((a) => a.type === 'pass') && !st.hands[p].some((id) => st.floor.some((f) => monthOf(f) === monthOf(id)))) return { type: 'pass' };
   const shake = acts.find((a) => a.type === 'shake');
   if (shake && (level === 'hard' || rand() < 0.5)) return shake;
   const plays = acts.filter((a) => a.type === 'play');

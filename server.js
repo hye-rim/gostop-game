@@ -171,8 +171,9 @@ function sitDown(room, client) {
 }
 
 function startGame(room, firstGame) {
-  // 선은 첫 판에는 무작위, 한 판 더부터는 번갈아
-  room.first = firstGame ? crypto.randomInt(2) : 1 - room.first;
+  // 선은 첫 판에는 무작위, 한 판 더부터는 이긴 사람이 선 (컴퓨터 대전과 같음). 나가리면 번갈아
+  const won = room.result && room.result.winner >= 0 ? room.result.winner : -1;
+  room.first = firstGame ? crypto.randomInt(2) : won >= 0 ? won : 1 - room.first;
   room.carry = room.nextCarry;
   room.game = L.newGame(rand, room.first, room.carry);
   room.events = [];
@@ -290,7 +291,7 @@ const handlers = {
     if (seat && room.state === 'waiting') vacate(room, seat);
   },
 
-  // 모든 결정(패 내기 · 고르기 · 흔들기 · 폭탄 · 국진 쓰임 · 고 · 스톱)은 이 하나로 온다. 규칙에 어긋나거나 내 차례가 아니면 무시한다
+  // 모든 결정(패 내기 · 고르기 · 흔들기 · 폭탄 · 폭탄패 · 국진 쓰임 · 고 · 스톱)은 이 하나로 온다. 규칙에 어긋나거나 내 차례가 아니면 무시한다
   act(client, msg) {
     const room = rooms.get(client.roomCode);
     const seat = room && seatOf(room, client);
@@ -302,6 +303,7 @@ const handlers = {
     if (typeof act.type !== 'string') return;
     if (a.card !== undefined) { if (!Number.isInteger(a.card)) return; act.card = a.card; }
     if (a.month !== undefined) { if (!Number.isInteger(a.month)) return; act.month = a.month; }
+    if (a.pick !== undefined) { if (!Number.isInteger(a.pick)) return; act.pick = a.pick; }   // 두 장 중 먹을 바닥 패를 미리 찍음
     if (a.as !== undefined) { if (a.as !== 'yeol' && a.as !== 'ssang') return; act.as = a.as; }   // 국진을 열끗으로/쌍피로
     if (!L.apply(g, act)) return;
     room.events = g.events.slice();
