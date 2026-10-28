@@ -129,8 +129,8 @@ const score = (st, p) => scoreOf(st.cap[p], st.gukjin && st.gukjin[p]);
 function steal(st, from, to, n, why) {
   const took = [];
   for (let k = 0; k < n; k++) {
-    const pool = st.cap[from].filter((id) => card(id).kind === 'pi');
-    const pick = pool.find((id) => !card(id).ssang) ?? pool[0];
+    const pool = st.cap[from].filter((id) => card(id).kind === 'pi' || (id === GUKJIN && st.gukjin && st.gukjin[from] === 'ssang'));   // 쌍피로 쓰기로 한 국진도 피다
+    const pick = pool.find((id) => !card(id).ssang && id !== GUKJIN) ?? pool.find((id) => id !== GUKJIN) ?? pool[0];
     if (pick === undefined) break;
     remove(st.cap[from], pick); st.cap[to].push(pick); took.push(pick);
   }

@@ -675,3 +675,17 @@ test('the computer decides the gukjin by what it already holds, not always as a 
   assert.strictEqual(pick([GUK, id(2, 0), id(4, 0), id(1, 2), id(1, 3)]), 'yeol', 'a few yeol and a few pi: stay closer to five yeol');
   assert.strictEqual(pick([GUK, id(1, 2), id(1, 3), id(2, 2), id(2, 3), id(3, 2), id(3, 3), id(4, 2), id(4, 3)]), 'ssang', 'eight pi plus two makes ten');
 });
+
+test('jjok plus sseul steals two pi, and a ssang gukjin counts as a pi', () => {
+  const mk = (cap1, g) => { const st = S({ h0: [id(2, 3), id(6, 3)], h1: [id(9, 2)], floor: [id(2, 0)], flip: id(2, 1), cap1 }); st.gukjin = [null, g]; return st; };
+  const a = mk([id(1, 2), id(1, 3), id(3, 2)], null); play(a, id(2, 3));
+  assert.ok(!kinds(a).includes('jjok'));
+  const b = S({ h0: [id(2, 3), id(6, 3)], h1: [id(9, 2)], floor: [], flip: id(2, 2), cap1: [id(1, 2), id(1, 3), id(3, 2)] });
+  play(b, id(2, 3));
+  assert.deepStrictEqual(kinds(b), ['jjok', 'sseul']);
+  assert.strictEqual(b.cap[1].length, 1);
+  const c = S({ h0: [id(2, 3), id(6, 3)], h1: [id(9, 2)], floor: [id(2, 0), id(2, 1), id(2, 2), id(10, 2)], flip: id(8, 2), cap1: [L.GUKJIN] });
+  c.gukjin = [null, 'ssang']; c.ppeok[1] = 0;
+  play(c, id(2, 3));
+  assert.strictEqual(c.cap[1].length, 0);
+});
