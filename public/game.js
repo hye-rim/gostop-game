@@ -362,7 +362,7 @@ function clearStaleGhosts(v) {                                       // 연출�
 }
 
 // ---------- 일어난 일 처리 (소리 · 알림 · 마지막 한 차례) ----------
-const SPECIAL = { chongtong: '총통!', jjok: '쪽!', ddadak: '따닥!', ppeok: '뻑!', jappeok: '자뻑!', ppeokeat: '뻑 먹기!', sseul: '쓸!', bomb: '폭탄!', shake: '흔들기!' };
+const SPECIAL = { chongtong: '총통!', jjok: '쪽!', ddadak: '따닥!', ppeok: '뻑!', jappeok: '자뻑!', ppeokeat: '뻑 먹기!', firstthree: '석 장 먹기!', sseul: '쓸!', bomb: '폭탄!', shake: '흔들기!' };
 function onEvents(evs, you) {
   if (!evs || !evs.length) return;
   const fx = fxStart(evs, you);                                      // 화면이 바뀌기 전에 자리를 재고, 연출을 예약한다
@@ -380,7 +380,7 @@ function onEvents(evs, you) {
       const r = rec(e.who, e.kind === 'bomb' || e.kind === 'shake');
       r.special.push(SPECIAL[e.kind] || '');
       if (e.kind === 'shake') { r.shakeCards = e.cards || []; r.shakeOnly = true; }
-      if (['jjok', 'ddadak', 'ppeokeat', 'jappeok', 'sseul', 'bomb'].includes(e.kind)) r.expect = true;
+      if (['jjok', 'ddadak', 'ppeokeat', 'firstthree', 'jappeok', 'sseul', 'bomb'].includes(e.kind)) r.expect = true;
     } else if (e.t === 'steal') rec(e.to, false).stolen.push(...e.cards);
     else if (e.t === 'gukjin') rec(e.who, false).special.push(e.as === 'ssang' ? '국진=쌍피' : '국진=열끗');
     if (!fx) {

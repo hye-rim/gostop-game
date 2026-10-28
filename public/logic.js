@@ -164,7 +164,11 @@ function playCard(st, id, pick) {
 function eatPpeok(st, p, m) {
   const who = st.ppeok[m];
   delete st.ppeok[m];
-  if (who === undefined) return;                           // 처음부터 바닥에 쌓여 있던 석 장
+  if (who === undefined) {                                 // 처음부터 바닥에 깔려 있던 석 장: 먹으면 상대 피 1장
+    emit(st, { t: 'special', kind: 'firstthree', who: p });
+    steal(st, 1 - p, p, 1, 'firstthree');
+    return;
+  }
   emit(st, { t: 'special', kind: who === p ? 'jappeok' : 'ppeokeat', who: p });
   steal(st, 1 - p, p, who === p ? 2 : 1, who === p ? 'jappeok' : 'ppeokeat');
 }

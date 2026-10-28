@@ -132,6 +132,14 @@ test('ppeok: hand pairs with the floor, the flip makes a third; nothing is taken
   assert.strictEqual(st.ppeok[1], 0);
 });
 
+test('eating three of a month that were on the floor from the start steals one pi', () => {
+  const mk = () => S({ h0: [id(2, 3), id(6, 3)], h1: [id(9, 2)], floor: [id(2, 0), id(2, 1), id(2, 2), id(10, 2)], flip: id(8, 2), cap1: [id(1, 2), id(1, 3), id(3, 2), id(3, 3)] });
+  const st = mk(); play(st, id(2, 3));
+  assert.ok(kinds(st).includes('firstthree'));
+  assert.strictEqual(st.cap[1].length, 3);
+  assert.ok(!kinds(st).includes('ppeokeat'));
+});
+
 test('eating your own ppeok steals two pi, eating the opponent ppeok steals one', () => {
   const mk = (who) => { const st = S({ h0: [id(2, 3), id(6, 3)], h1: [id(9, 2)], floor: [id(2, 0), id(2, 1), id(2, 2), id(10, 2)], flip: id(8, 2), cap1: [id(1, 2), id(1, 3), id(3, 2), id(3, 3)] }); st.ppeok[1] = who; return st; };
   const own = mk(0); play(own, id(2, 3));
