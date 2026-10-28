@@ -100,21 +100,24 @@ function view() {
   if (online()) {
     if (!room) return null;
     return { you: room.you, turn: room.turn, phase: room.phase, hand: room.hand, handN: room.handN, deckN: room.deckN, floor: room.floor, cap: room.cap, options: room.options,
-      legal: room.legal || [], goCount: room.goCount, shakes: room.shakes, bombs: room.bombs, gukjin: room.gukjin || [null, null], names: [0, 1].map((s) => (s === room.you ? '나' : ((room.players[s] || {}).name || '상대'))),
+      legal: room.legal || [], goCount: room.goCount, shakes: room.shakes, bombs: room.bombs, bombPass: room.bombPass || [0, 0], gukjin: room.gukjin || [null, null], names: [0, 1].map((s) => (s === room.you ? '나' : ((room.players[s] || {}).name || '상대'))),
       total: room.total, result: room.result, over: room.state === 'over', state: room.state, carry: room.carry, nextCarry: room.nextCarry };
   }
   if (!st) return null;
   return { you: 0, turn: st.turn, phase: st.phase, hand: st.hands[0], handN: [st.hands[0].length, st.hands[1].length], deckN: st.deck.length, floor: st.floor, cap: st.cap,
-    options: st.ctx && st.ctx.options, legal: st.turn === 0 ? L.legalActions(st) : [], goCount: st.goCount, shakes: st.shakes, bombs: st.bombs, gukjin: st.gukjin || [null, null], names: ['나', '컴퓨터'],
+    options: st.ctx && st.ctx.options, legal: st.turn === 0 ? L.legalActions(st) : [], goCount: st.goCount, shakes: st.shakes, bombs: st.bombs, bombPass: st.bombPass || [0, 0], gukjin: st.gukjin || [null, null], names: ['나', '컴퓨터'],
     total: totals, result: st.result, over: st.phase === 'over', state: st.phase === 'over' ? 'over' : 'playing', carry: st.carry, nextCarry: st.result ? st.result.nextCarry : 1 };
 }
 const myTurn = (v) => !!v && v.state === 'playing' && v.turn === v.you && !netDown && !waitingNet && performance.now() >= busyUntil;
 
 // ---------- 그리기 ----------
 const KINDS = ['gwang', 'yeol', 'tti', 'pi'];
-function capHtml(ids, small) {
-  const groups = KINDS.map((k) => ids.filter((id) => L.card(id).kind === k).sort((a, b) => a - b));
-  return groups.map((g) => (g.length ? `<div class="grp">${g.map((id) => cd(id, fresh.has(id) ? 'fresh' : '')).join('')}</div>` : '')).join('') || (small ? '' : '<span style="color:rgba(255,255,255,.5);font-size:12px">먹은 패가 여기 쌓여요</span>');
+function capHtml(ids, small, mode) {
+  // 국진(9월 술잔)을 쌍피로 쓰기로 했으면 열끗 줄이 아니라 피 줄에 놓고 쌍피 표시를 단다
+  const asPi = (id) => id === L.GUKJIN && mode === 'ssang';
+  const kindOf = (id) => (asPi(id) ? 'pi' : L.card(id).kind);
+  const groups = KINDS.map((k) => ids.filter((id) => kindOf(id) === k).sort((a, b) => a - b));
+  return groups.map((g) => (g.length ? `<div class="grp">${g.map((id) => cd(id, `${fresh.has(id) ? 'fresh' : ''}${asPi(id) ? ' ssang' : ''}`.trim())).join('')}</div>` : '')).join('') || (small ? '' : '<span style="color:rgba(255,255,255,.5);font-size:12px">먹은 패가 여기 쌓여요</span>');
 }
 // 먹은 패는 겹쳐 쌓되, 많이 먹어도 한 줄 안에서 종류마다 첫 장은 온전히 보이고 나머지는 겹친 폭만 줄여서 맞춘다
 function fitCap(el, natural) {
@@ -149,9 +152,9 @@ function render() {
   const you = v.you, opp = 1 - you;
   // 상대
   const goTxt = (p) => (v.goCount[p] ? ` · ${v.goCount[p]}고` : '');
-  const shakeTxt = (p) => (v.shakes[p] ? ` · 흔들${v.shakes[p]}` : '');
+  const shakeTxt = (p) => (v.shakes[p] ? ` · 흔들${v.shakes[p]}` : '') + (v.bombPass[p] ? ` · 뒤집기만 ${v.bombPass[p]}` : '');
   $('oppWho').innerHTML = `<span class="nm">${esc(v.names[opp])}</span><span class="sc">${scoreText(v.cap[opp], v.gukjin[opp])}${goTxt(opp)}${shakeTxt(opp)}</span><span class="hc">${Array.from({ length: Math.min(10, v.handN[opp]) }, () => '<i></i>').join('')}</span>`;
-  $('oppCap').innerHTML = capHtml(v.cap[opp], true);
+  $('oppCap').innerHTML = capHtml(v.cap[opp], true, v.gukjin[opp]);
   fitCap($('oppCap'), 14);
   // 더미 · 바닥
   $('deck').innerHTML = `${v.deckN ? back() : '<div class="cd" style="opacity:.25"></div>'}<span>더미 ${v.deckN}</span>`;
@@ -166,7 +169,7 @@ function render() {
   } else $('strip').innerHTML = '';
   $('last').innerHTML = lastRow(lastTurn[opp], '상대') + lastRow(lastTurn[you], '나');
   // 나
-  $('myCap').innerHTML = capHtml(v.cap[you], false);
+  $('myCap').innerHTML = capHtml(v.cap[you], false, v.gukjin[you]);
   fitCap($('myCap'), 13);
   $('meWho').innerHTML = `<span class="nm">${esc(v.names[you])}</span><span class="sc">${scoreText(v.cap[you], v.gukjin[you])}${goTxt(you)}${shakeTxt(you)}</span>`;
   $('hand').innerHTML = v.hand.slice().sort((a, b) => a - b).map((id) => cd(id, `${selCard === id ? 'sel' : ''}${v.turn === v.you && v.phase === 'play' ? '' : ' dim'}`)).join('');
@@ -260,7 +263,7 @@ function impact(r, strong) {                                         // 착! 퍼
   ring.animate([{ transform: 'scale(.55)', opacity: 0.9 }, { transform: 'scale(1.8)', opacity: 0 }], { duration: 280, easing: 'ease-out' });
   setTimeout(() => ring.remove(), 330);
   if (strong) { const tb = $('table'); tb.classList.remove('hit'); void tb.offsetWidth; tb.classList.add('hit'); }
-  try { if (navigator.vibrate) navigator.vibrate(strong ? 12 : 6); } catch (_) {}
+  try { if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) navigator.vibrate(strong ? 12 : 6); } catch (_) {}   // 한 번도 안 눌렀으면 브라우저가 막으니 부르지 않는다
 }
 // 이번에 일어난 일들이 시작하는 때(ms)와 전체 길이
 function fxPlan(evs) {

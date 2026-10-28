@@ -151,10 +151,10 @@ function snapshot(room, seat) {
       hand: g.hands[me], handN: [g.hands[0].length, g.hands[1].length], deckN: g.deck.length,
       floor: g.floor, cap: g.cap,
       options: (g.phase === 'chooseHand' || g.phase === 'chooseFlip') && g.ctx ? g.ctx.options : null,
-      goCount: g.goCount, shakes: g.shakes, bombs: g.bombs, gukjin: g.gukjin,
+      goCount: g.goCount, shakes: g.shakes, bombs: g.bombs, bombPass: g.bombPass, gukjin: g.gukjin,
       legal: room.state === 'playing' && g.turn === me ? L.legalActions(g) : [],
     });
-  } else Object.assign(snap, { turn: 0, phase: 'play', hand: [], handN: [0, 0], deckN: 0, floor: [], cap: [[], []], options: null, goCount: [0, 0], shakes: [0, 0], bombs: [0, 0], gukjin: [null, null], legal: [] });
+  } else Object.assign(snap, { turn: 0, phase: 'play', hand: [], handN: [0, 0], deckN: 0, floor: [], cap: [[], []], options: null, goCount: [0, 0], shakes: [0, 0], bombs: [0, 0], bombPass: [0, 0], gukjin: [null, null], legal: [] });
   return snap;
 }
 

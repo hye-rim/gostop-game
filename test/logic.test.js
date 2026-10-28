@@ -537,3 +537,54 @@ test('shake: the shaken cards are shown to everyone in the event', () => {
   assert.strictEqual(ev.month, 5);
   assert.strictEqual(ev.who, 0);
 });
+
+// ---------- 폭탄: 세 장을 한꺼번에 냈으니 다음 두 차례는 더미만 뒤집는다 ----------
+const bombState = () => S({ h0: [id(6, 0), id(6, 1), id(6, 2), id(1, 2), id(2, 2), id(3, 2)], h1: [id(9, 2), id(10, 2), id(11, 2), id(4, 2), id(5, 2), id(7, 2)], floor: [id(6, 3), id(12, 1)], flip: id(8, 2), fill: 14 });
+
+test('bomb: the bomber then has two flip-only turns and keeps the hand untouched', () => {
+  const st = bombState();
+  assert.ok(L.apply(st, { type: 'bomb', month: 5 }));
+  assert.deepStrictEqual(st.bombPass, [2, 0]);
+  assert.strictEqual(st.hands[0].length, 3);
+  assert.strictEqual(st.turn, 1);
+  const deck0 = st.deck.length;
+  // 상대가 한 장 낼 때마다 폭탄 낸 사람의 차례는 더미 뒤집기만 하고 곧바로 상대 차례로 돌아온다
+  for (const [n, pass] of [[1, 1], [2, 0]]) {
+    assert.ok(play(st, st.hands[1][0]));
+    assert.ok(st.events.some((e) => e.t === 'flipOnly' && e.who === 0), `flip-only turn ${n}`);
+    assert.strictEqual(st.bombPass[0], pass);
+    assert.strictEqual(st.hands[0].length, 3, 'the bomber does not have to play');
+    assert.strictEqual(st.turn, 1, 'the turn comes back to the other player');
+    assert.strictEqual(st.deck.length, deck0 - 2 * n, 'one flip each');
+  }
+  // 세 번째부터는 폭탄 낸 사람도 보통대로 패를 낸다
+  assert.ok(play(st, st.hands[1][0]));
+  assert.ok(!st.events.some((e) => e.t === 'flipOnly'));
+  assert.strictEqual(st.turn, 0);
+  assert.strictEqual(st.phase, 'play');
+  assert.ok(L.legalActions(st).some((a) => a.type === 'play'));
+});
+
+test('bomb: a whole game with bombs ends with both sides having played the same number of turns', () => {
+  let bombs = 0;
+  for (let g = 0; g < 400; g++) {
+    const r = L.rng(g + 5), st = L.newGame(r, g % 2);
+    let guard = 0;
+    while (st.phase !== 'over' && guard++ < 200) {
+      const acts = L.legalActions(st);
+      let a = acts.find((x) => x.type === 'bomb') || acts[Math.floor(r() * acts.length)];
+      if (st.phase === 'gostop') a = { type: 'stop' };
+      if (a.type === 'bomb') bombs++;
+      assert.ok(L.apply(st, a));
+    }
+    assert.strictEqual(st.phase, 'over', `game ${g} ends`);
+    assert.ok(st.bombPass.every((n) => n >= 0 && n <= 4), 'pass count stays sane');
+  }
+  assert.ok(bombs > 20, `bombs happened (${bombs})`);
+});
+
+test('clone keeps the bomb pass counts', () => {
+  const st = bombState();
+  L.apply(st, { type: 'bomb', month: 5 });
+  assert.deepStrictEqual(L.clone(st).bombPass, [2, 0]);
+});

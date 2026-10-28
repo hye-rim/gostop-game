@@ -4,7 +4,7 @@
 //
 // - 화투 48장(12달 x 4장). 손패 10장씩, 바닥 8장, 나머지 20장은 더미. 차례마다 ① 손패 한 장을 내서 같은 달 바닥 패와 맞추고 ② 더미 맨 위를 뒤집어 또 맞춘다
 // - 같은 달 두 장이 맞으면 가져온다. 바닥에 같은 달이 없으면 그냥 내려놓는다. 바닥에 같은 달이 두 장이면 하나를 고른다
-// - 특별한 일: 쪽 · 따닥 · 뻑 · 쓸 · 폭탄 · 흔들기 (아래 설명), 상대의 피를 한 장씩 뺏어 온다
+// - 특별한 일: 쪽 · 따닥 · 뻑 · 쓸 · 폭탄 · 흔들기 (아래 설명), 상대의 피를 한 장씩 뺏어 온다. 폭탄은 세 장을 한꺼번에 내므로 그 사람은 다음 두 차례 패를 내지 않고 더미만 뒤집는다
 // - 총통: 처음 받은 손패에 같은 달 네 장이 있으면 바로 이겨서 10점을 받을 수도 있고, 그냥 계속할 수도 있다 (고르는 것은 그 사람)
 // - 점수가 7점 이상이면 고(계속) 또는 스톱(끝내고 점수 받기). 고를 하면 점수가 늘지만 상대가 먼저 나면 고박. 내 손에 패가 없으면 고는 못 하고 바로 스톱
 // - 점수: 광(3광 3점 · 비광 포함 2점 · 4광 4점 · 5광 15점) · 열끗(5장 1점, 한 장마다 +1, 고도리 5점) · 띠(5장 1점, 한 장마다 +1, 홍단·청단·초단 각 3점) · 피(10장 1점, 한 장마다 +1, 쌍피는 2장)
@@ -105,7 +105,7 @@ function newGame(rand = Math.random, first = 0, carry = 1) {
     return {
       deck, floor, hands, cap: [[], []], turn: chong.length ? chong[0] : first, first, phase: chong.length ? 'chongtong' : 'play', chong, carry: Math.max(1, Math.floor(carry) || 1),
       ctx: null,                                   // 지금 진행 중인 차례의 임시 정보
-      goCount: [0, 0], lastGo: [0, 0], shakes: [0, 0], bombs: [0, 0],
+      goCount: [0, 0], lastGo: [0, 0], shakes: [0, 0], bombs: [0, 0], bombPass: [0, 0],   // bombPass: 폭탄으로 한꺼번에 낸 만큼 앞으로 더미만 뒤집는 차례 수
       shaken: {}, ppeok: {},                       // 흔들기 한 달 · 뻑이 쌓인 달 (누가 쌓았나)
       gukjin: [null, null],                        // 국진(9월 열끗)을 가진 사람이 고른 쓰임: 'yeol' | 'ssang'
       events: [], seq: 0, plies: 0, result: null,
@@ -117,7 +117,7 @@ function clone(st) {
   return {
     ...st, deck: st.deck.slice(), floor: st.floor.slice(), hands: st.hands.map((h) => h.slice()), cap: st.cap.map((c) => c.slice()),
     ctx: st.ctx ? { ...st.ctx, held: st.ctx.held.slice(), gain: st.ctx.gain.slice(), options: st.ctx.options ? st.ctx.options.slice() : null } : null,
-    chong: (st.chong || []).slice(), goCount: st.goCount.slice(), lastGo: st.lastGo.slice(), shakes: st.shakes.slice(), bombs: st.bombs.slice(), shaken: { ...st.shaken }, ppeok: { ...st.ppeok }, gukjin: (st.gukjin || [null, null]).slice(),
+    chong: (st.chong || []).slice(), goCount: st.goCount.slice(), lastGo: st.lastGo.slice(), shakes: st.shakes.slice(), bombs: st.bombs.slice(), bombPass: (st.bombPass || [0, 0]).slice(), shaken: { ...st.shaken }, ppeok: { ...st.ppeok }, gukjin: (st.gukjin || [null, null]).slice(),
     events: [], result: st.result ? { ...st.result } : null,
   };
 }
@@ -243,8 +243,10 @@ function nextTurn(st) {
   st.phase = 'play';
   st.turn = 1 - st.turn;
   if (!st.hands[0].length && !st.hands[1].length) { exhaust(st); return; }
-  // 손패가 없는 쪽(폭탄으로 먼저 비운 경우)은 더미만 뒤집고 넘어간다
-  if (!st.hands[st.turn].length) {
+  // 폭탄으로 한꺼번에 낸 사람은 그만큼(두 번) 더미만 뒤집고, 손패가 없는 쪽도 더미만 뒤집고 넘어간다
+  const pass = (st.bombPass && st.bombPass[st.turn]) || 0;
+  if (pass > 0 || !st.hands[st.turn].length) {
+    if (pass > 0) st.bombPass[st.turn]--;
     st.ctx = startCtx(-1, -1); st.ctx.mode = 'flipOnly';
     emit(st, { t: 'flipOnly', who: st.turn });
     flipStep(st);
@@ -333,7 +335,7 @@ function apply(st, act) {
       const fl = st.floor.filter((c) => monthOf(c) === m);
       mine.forEach((c) => remove(st.hands[p], c)); fl.forEach((c) => remove(st.floor, c));
       const ctx = (st.ctx = startCtx(mine[0], m)); ctx.mode = 'bomb'; ctx.held = [...mine, ...fl];
-      st.bombs[p]++;
+      st.bombs[p]++; st.bombPass[p] += 2;                        // 세 장을 한꺼번에 냈으니 다음 두 차례는 더미만 뒤집는다
       emit(st, { t: 'special', kind: 'bomb', who: p, month: m });
       steal(st, 1 - p, p, 1, 'bomb');
       flipStep(st);

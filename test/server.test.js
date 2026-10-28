@@ -69,7 +69,7 @@ function botAct(c, level = 'hard') {
   const st = L.newGame(L.rng(1), 0);
   st.hands = [[], []]; st.hands[me] = r.hand.slice(); st.hands[1 - me] = new Array(r.handN[1 - me]).fill(0);
   st.floor = r.floor.slice(); st.cap = r.cap.map((x) => x.slice()); st.goCount = r.goCount.slice(); st.turn = r.turn; st.phase = r.phase;
-  st.shakes = r.shakes.slice(); st.bombs = r.bombs.slice(); st.gukjin = (r.gukjin || [null, null]).slice(); st.ctx = r.options ? { options: r.options } : null;
+  st.shakes = r.shakes.slice(); st.bombs = r.bombs.slice(); st.gukjin = (r.gukjin || [null, null]).slice(); st.bombPass = (r.bombPass || [0, 0]).slice(); st.ctx = r.options ? { options: r.options } : null;
   st.deck = new Array(r.deckN).fill(0); st.shaken = {};
   let a;
   try { a = L.aiPick(st, level, Math.random); } catch (_) { a = null; }
