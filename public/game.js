@@ -10,9 +10,10 @@ const T = { cpu: 900, over: 1300 };                          // 시간(ms). 시�
 
 // ---------- 카드 모양 ----------
 // 그림은 cards.js (화투 48장 SVG). 카드 한 장은 그림 한 장이고, 눈이 아닌 사람을 위한 이름만 붙인다
-function cd(id, cls = '') {
+function cd(id, cls = '', plain = false) {
   const c = L.card(id);
-  return `<div class="cd ${c.kind}${c.ssang ? ' ssang' : ''}${cls ? ' ' + cls : ''}" data-id="${id}" role="img" aria-label="${HWATU_ART.label(id)}">${HWATU_ART.use(id)}</div>`;
+  const hide = !plain && pendingHide.has(id) ? ' fx-hide' : '';          // 날아오는 중인 카드는 도착하기 전까지 숨김
+  return `<div class="cd ${c.kind}${c.ssang ? ' ssang' : ''}${cls ? ' ' + cls : ''}${hide}" data-id="${id}" role="img" aria-label="${HWATU_ART.label(id)}">${HWATU_ART.use(id)}</div>`;
 }
 const back = () => '<div class="cd back"></div>';
 
@@ -49,10 +50,24 @@ function tone(freq, dur, type = 'sine', vol = 0.09, slide = 0) {
   } catch (_) {}
 }
 const seq = (notes, step, type = 'triangle', vol = 0.09) => notes.forEach((f, i) => setTimeout(() => tone(f, step * 0.0009, type, vol), i * step));
+let noiseBuf = null;
+function burst(dur, vol, freq, type = 'highpass') {           // 짧은 잡음: 패를 바닥에 칠 때 나는 '착' 소리
+  if (muted) return;
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    if (!noiseBuf) { noiseBuf = audio.createBuffer(1, Math.floor(audio.sampleRate * 0.25), audio.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+    const t = audio.currentTime, src = audio.createBufferSource(), f = audio.createBiquadFilter(), g = audio.createGain();
+    src.buffer = noiseBuf; f.type = type; f.frequency.value = freq;
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(f).connect(g).connect(audio.destination);
+    src.start(t, Math.random() * 0.1, dur + 0.02);
+  } catch (_) {}
+}
 const sfx = {
   select: () => tone(560, 0.04, 'triangle', 0.06),
-  play: () => tone(190, 0.07, 'square', 0.07),
-  flip: () => tone(260, 0.06, 'triangle', 0.06, 120),
+  play: () => { burst(0.07, 0.34, 1400); tone(150, 0.09, 'sine', 0.2, -70); },
+  flip: () => { burst(0.1, 0.16, 2400, 'bandpass'); tone(260, 0.06, 'triangle', 0.05, 160); },
+  slap: () => { burst(0.05, 0.24, 1800); tone(120, 0.07, 'sine', 0.14, -50); },
   take: () => seq([523, 659], 70, 'triangle', 0.08),
   special: () => seq([392, 523, 659, 784], 80, 'triangle', 0.1),
   go: () => seq([523, 784, 1047], 90, 'triangle', 0.1),
@@ -113,7 +128,7 @@ function fitCap(el, natural) {
 // 마지막 한 차례를 한 줄로: 낸 패 · 뒤집은 패 → 먹은 패, 특별한 일, 뺏은 피
 function lastRow(r, name) {
   if (!r) return `<div class="lr"><span class="w">${name}</span><span class="t no">아직 없어요</span></div>`;
-  const mini = (id) => cd(id);
+  const mini = (id) => cd(id, '', true);                  // 날아가는 중에도 마지막 줄의 카드는 숨기지 않는다
   let h = `<span class="w">${name}</span>`;
   if (r.play !== undefined) h += `<span class="t">낸 패</span>${mini(r.play)}`;
   if (r.flip !== undefined) h += `<span class="t">뒤집음</span>${mini(r.flip)}`;
@@ -142,6 +157,7 @@ function render() {
   const sel = selCard !== null ? L.monthOf(selCard) : -1;
   const opts = new Set(v.phase === 'chooseHand' || v.phase === 'chooseFlip' ? v.options || [] : []);
   $('floor').innerHTML = v.floor.map((id) => cd(id, `${fresh.has(id) ? 'fresh ' : ''}${canPlay && L.monthOf(id) === sel ? 'match' : ''}${myTurn(v) && opts.has(id) ? 'opt' : ''}`)).join('');
+  clearStaleGhosts(v);
   // 방금 일어난 일
   if (strip && performance.now() < stripUntil) {
     $('strip').innerHTML = `<span class="lbl">${strip.who === you ? '내가' : esc(v.names[strip.who]).slice(0, 4)}</span>${strip.play !== undefined ? cd(strip.play) : ''}${strip.flip !== undefined ? '<span class="ar">▼</span>' + cd(strip.flip) : ''}`;
@@ -188,13 +204,152 @@ const overlayOpen = () => !$('overlay').classList.contains('hidden');
 function showOverlay(html) { $('overlay').innerHTML = html; $('overlay').classList.remove('hidden'); }
 function hideOverlay() { $('overlay').classList.add('hidden'); }
 
-// ---------- 일어난 일 처리 (소리 · 알림 · 방금 낸 패) ----------
+// ---------- 착착 치는 연출 ----------
+// 패를 내면 손에서 날아가 바닥에 "착" 내려앉고, 상대 패는 손에서 뒤집혀 나오고, 더미 한 장이 뒤집히고, 먹은 패는 먹은 자리로 쓸려 간다.
+// 판 상태는 이미 바뀌어 있으니, 날아가는 동안 도착할 자리의 진짜 카드는 숨겨 두고(pendingHide) 떠다니는 복사본(ghost)으로 보여 준다.
+const REDUCE = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FX = { play: 260, flip: 340, sweep: 330, beat: 190 };           // 시간(ms): 내기 · 뒤집기 · 쓸어 가기 · 동작 사이 쉼
+let pendingHide = new Set();         // 날아가는 중이라 제자리에서는 숨겨 둔 카드 번호
+let ghosts = new Map();              // 카드 번호 -> 화면에 떠 있는 복사본 (먹기를 기다리는 것 포함)
+let fxEnd = 0, fxTimers = [];
+const later = (fn, ms) => { fxTimers.push(setTimeout(fn, Math.max(0, ms))); };
+function fxReset() {
+  fxTimers.forEach(clearTimeout); fxTimers = []; pendingHide = new Set(); ghosts = new Map(); fxEnd = 0;
+  const f = $('fx'); if (f) f.innerHTML = '';
+  document.querySelectorAll('.cd.fx-hide').forEach((e) => e.classList.remove('fx-hide'));
+}
+const afterFx = (fn) => { const d = fxEnd - performance.now(); if (d > 0) setTimeout(fn, d + 150); else fn(); };
+const rectsOf = (sel) => { const m = new Map(); document.querySelectorAll(sel).forEach((e) => { const id = Number(e.dataset.id); if (!m.has(id)) m.set(id, e.getBoundingClientRect()); }); return m; };
+const unhide = (id) => { pendingHide.delete(id); document.querySelectorAll(`.cd.fx-hide[data-id="${id}"]`).forEach((e) => e.classList.remove('fx-hide')); };
+function mkGhost(id, r, down) {
+  const t = $('table').getBoundingClientRect();
+  const el = document.createElement('div');
+  el.className = 'fx';
+  el.style.cssText = `left:${r.left - t.left}px;top:${r.top - t.top}px;width:${r.width}px;height:${r.height}px`;
+  el.innerHTML = `<div class="fxi"${down ? ' style="transform:rotateY(180deg)"' : ''}><div class="ff">${cd(id, '', true)}</div><div class="fb">${back()}</div></div>`;
+  if (down) el.dataset.down = '1';
+  $('fx').appendChild(el);
+  return el;
+}
+function fly(el, to, dur, rot = 0, arc = 16) {                       // 지금 있는 자리에서 to 까지 날아간다
+  const from = el.getBoundingClientRect();
+  const dx = to.left + to.width / 2 - (from.left + from.width / 2), dy = to.top + to.height / 2 - (from.top + from.height / 2);
+  const sx = to.width / from.width, sy = to.height / from.height, mid = (1 + sx) / 2 * 1.12;
+  el.animate([
+    { transform: 'translate(0,0) scale(1) rotate(0deg)' },
+    { transform: `translate(${dx * 0.55}px,${dy * 0.55 - arc}px) scale(${mid}) rotate(${rot * 0.6}deg)`, offset: 0.55 },
+    { transform: `translate(${dx}px,${dy}px) scale(${sx},${sy}) rotate(0deg)` },
+  ], { duration: dur, easing: 'cubic-bezier(.25,.7,.3,1)', fill: 'forwards' });
+  if (el.dataset.down === '1') { el.querySelector('.fxi').animate([{ transform: 'rotateY(180deg)' }, { transform: 'rotateY(0deg)' }], { duration: dur * 0.85, easing: 'ease-out', fill: 'forwards' }); delete el.dataset.down; }
+}
+function settle(el, to) {                                            // 도착: 그 자리에 고정하고 살짝 눌렸다 펴진다
+  const t = $('table').getBoundingClientRect();
+  el.getAnimations().forEach((a) => a.cancel());
+  const inner = el.querySelector('.fxi'); if (inner) { inner.getAnimations().forEach((a) => a.cancel()); inner.style.transform = 'none'; }
+  el.style.cssText = `left:${to.left - t.left}px;top:${to.top - t.top}px;width:${to.width}px;height:${to.height}px`;
+  el.animate([{ transform: 'scale(1.17)' }, { transform: 'scale(.96)', offset: 0.55 }, { transform: 'scale(1)' }], { duration: 180, easing: 'ease-out' });
+}
+function impact(r, strong) {                                         // 착! 퍼지는 동그라미 + 판이 살짝 흔들림 + 폰 진동
+  const t = $('table').getBoundingClientRect(), d = Math.max(r.width, r.height), ring = document.createElement('i');
+  ring.className = 'fxring';
+  ring.style.cssText = `left:${r.left - t.left + r.width / 2 - d / 2}px;top:${r.top - t.top + r.height / 2 - d / 2}px;width:${d}px;height:${d}px`;
+  $('fx').appendChild(ring);
+  ring.animate([{ transform: 'scale(.55)', opacity: 0.9 }, { transform: 'scale(1.8)', opacity: 0 }], { duration: 280, easing: 'ease-out' });
+  setTimeout(() => ring.remove(), 330);
+  if (strong) { const tb = $('table'); tb.classList.remove('hit'); void tb.offsetWidth; tb.classList.add('hit'); }
+  try { if (navigator.vibrate) navigator.vibrate(strong ? 12 : 6); } catch (_) {}
+}
+// 이번에 일어난 일들이 시작하는 때(ms)와 전체 길이
+function fxPlan(evs) {
+  let t = 0; const items = [];
+  for (const e of evs) {
+    if (e.t === 'play') { items.push({ e, at: t }); t += FX.play + FX.beat; }
+    else if (e.t === 'flip') { items.push({ e, at: t }); t += FX.flip + FX.beat; }
+    else if ((e.t === 'capture' || e.t === 'steal') && e.cards.length) { items.push({ e, at: t }); t += FX.sweep + 60 * (e.cards.length - 1) + FX.beat; }
+  }
+  return { items, total: t };
+}
+// 화면이 아직 바뀌기 전에 불러야 한다 (낸 패·바닥·먹은 패의 지금 자리를 재 둔다). 연출을 시작하면 { off, total } 를 돌려준다
+function fxStart(evs, you) {
+  if (REDUCE || !$('fx') || phase === 'title') return null;
+  const plan = fxPlan(evs);
+  if (!plan.items.length) return null;
+  const now = performance.now(), off = Math.max(0, fxEnd - now);
+  const pre = {
+    hand: rectsOf('#hand .cd'), floor: rectsOf('#floor .cd'), cap: rectsOf('.cap .cd'),
+    deck: ($('deck').querySelector('.cd') || $('deck')).getBoundingClientRect(),
+    opp: ($('oppWho').querySelector('.hc i:last-child') || $('oppWho').querySelector('.hc') || $('oppWho')).getBoundingClientRect(),
+  };
+  const ids = new Set();
+  for (const { e } of plan.items) (e.cards || [e.card]).forEach((c) => { pendingHide.add(c); ids.add(c); });
+  fxEnd = now + off + plan.total;
+  busyUntil = Math.max(busyUntil, fxEnd);
+  setTimeout(() => runFx(plan, you, pre, off, ids), 0);              // 새 화면이 그려진 뒤에
+  later(() => { if (performance.now() >= fxEnd - 5) render(); }, off + plan.total + 30);   // 연출이 끝나면 내 차례 표시(고를 패 테두리 등)를 다시 그린다
+  return { off, total: plan.total };
+}
+function runFx(plan, you, pre, off, ids) {
+  const post = { floor: rectsOf('#floor .cd'), cap: rectsOf('.cap .cd'), myCap: $('myCap').getBoundingClientRect(), oppCap: $('oppCap').getBoundingClientRect(), floorBox: $('floor').getBoundingClientRect() };
+  const played = new Set(plan.items.filter(({ e }) => e.t === 'play' || e.t === 'flip').map(({ e }) => e.card));
+  // 먹혀서 새 화면에서는 사라진 바닥 패는 먹기 전까지 제자리에 복사본으로 남겨 둔다
+  for (const { e } of plan.items) if (e.t === 'capture') e.cards.forEach((id) => { if (pre.floor.has(id) && !post.floor.has(id) && !played.has(id) && !ghosts.has(id)) ghosts.set(id, mkGhost(id, pre.floor.get(id), false)); });
+  const matchSpot = (id) => {                                         // 같은 달 바닥 패 위(없으면 바닥 가운데)
+    const m = L.monthOf(id);
+    for (const [gid, g] of ghosts) if (gid !== id && L.monthOf(gid) === m) return g.getBoundingClientRect();
+    for (const [fid, r] of pre.floor) if (fid !== id && L.monthOf(fid) === m) return r;
+    const w = pre.deck.width, h = pre.deck.height, b = post.floorBox;
+    return { left: b.left + b.width / 2 - w / 2, top: b.top + b.height / 2 - h / 2, width: w, height: h };
+  };
+  const land = (id, el, dst, strong, snd) => {
+    settle(el, dst); impact(dst, strong); snd();
+    if (post.floor.has(id)) { unhide(id); el.remove(); ghosts.delete(id); }          // 바닥에 놓인 패는 진짜 카드와 바꿔 치기
+  };
+  for (const { e, at } of plan.items) {
+    const t0 = off + at;
+    if (e.t === 'play') later(() => {
+      const id = e.card, mine = e.who === you, src = mine ? pre.hand.get(id) : pre.opp;
+      if (!src) { unhide(id); return; }
+      const el = mkGhost(id, src, !mine); ghosts.set(id, el);
+      const dst = post.floor.get(id) || matchSpot(id);
+      fly(el, dst, FX.play, mine ? -7 : 7, 22);
+      later(() => land(id, el, dst, true, sfx.play), FX.play);
+    }, t0);
+    else if (e.t === 'flip') later(() => {
+      const id = e.card, el = mkGhost(id, pre.deck, true); ghosts.set(id, el);
+      const dst = post.floor.get(id) || matchSpot(id);
+      fly(el, dst, FX.flip, 0, 30);
+      later(() => land(id, el, dst, false, sfx.flip), FX.flip);
+    }, t0);
+    else if (e.t === 'capture' || e.t === 'steal') e.cards.forEach((id, i) => later(() => {
+      let el = ghosts.get(id);
+      if (!el) {                                                       // 폭탄처럼 손에서 바로 먹는 패, 뺏기는 상대 피
+        const src = e.t === 'steal' ? pre.cap.get(id) : (pre.hand.get(id) || pre.floor.get(id) || (e.who !== you ? pre.opp : null));
+        if (!src) { unhide(id); return; }
+        el = mkGhost(id, src, e.t === 'capture' && !pre.hand.has(id) && !pre.floor.has(id)); ghosts.set(id, el);
+      }
+      const to = e.t === 'steal' ? e.to : e.who, dst = post.cap.get(id) || (to === you ? post.myCap : post.oppCap);
+      fly(el, dst, FX.sweep, 0, 10);
+      later(() => { settle(el, dst); if (i === 0) { if (e.t === 'steal') { impact(dst, true); sfx.slap(); } else sfx.take(); } unhide(id); el.remove(); ghosts.delete(id); }, FX.sweep);
+    }, t0 + i * 60));
+  }
+  later(() => ids.forEach((id) => { if (!ghosts.has(id)) unhide(id); }), off + plan.total + 120);   // 혹시 남은 숨김 정리
+}
+function clearStaleGhosts(v) {                                       // 연출이 끝났는데 떠 있는 복사본이 남았으면 치운다 (두 장 중 고르는 중이면 둔다)
+  if (performance.now() < fxEnd || !ghosts.size) return;
+  if (v && (v.phase === 'chooseHand' || v.phase === 'chooseFlip')) return;
+  ghosts.forEach((g) => g.remove()); ghosts = new Map();
+  document.querySelectorAll('.cd.fx-hide').forEach((e) => e.classList.remove('fx-hide')); pendingHide = new Set();
+}
+
+// ---------- 일어난 일 처리 (소리 · 알림 · 마지막 한 차례) ----------
 const SPECIAL = { chongtong: '총통!', jjok: '쪽!', ddadak: '따닥!', ppeok: '뻑!', jappeok: '자뻑!', ppeokeat: '뻑 먹기!', sseul: '쓸!', bomb: '폭탄!', shake: '흔들기!' };
 function onEvents(evs, you) {
   if (!evs || !evs.length) return;
-  let who = -1, pl, fl;
+  const fx = fxStart(evs, you);                                      // 화면이 바뀌기 전에 자리를 재고, 연출을 예약한다
+  const off = fx ? fx.off : 0, total = fx ? fx.total : 0;
+  const snd = (fn, at = 0) => { if (fx) later(fn, off + at); else fn(); };      // 연출 중이면 그 순간에 맞춰 소리를 낸다
+  let big = '', bigAt = 0;
   const got = new Set();
-  let big = '';
   const rec = (w, fresh0) => { if (fresh0 || !lastTurn[w]) lastTurn[w] = { play: undefined, flip: undefined, got: [], stolen: [], special: [], expect: false }; return lastTurn[w]; };
   for (const e of evs) {
     if (e.t === 'play') rec(e.who, true).play = e.card;
@@ -206,18 +361,21 @@ function onEvents(evs, you) {
       r.special.push(SPECIAL[e.kind] || '');
       if (['jjok', 'ddadak', 'ppeokeat', 'jappeok', 'sseul', 'bomb'].includes(e.kind)) r.expect = true;
     } else if (e.t === 'steal') rec(e.to, false).stolen.push(...e.cards);
-    if (e.t === 'play') { who = e.who; pl = e.card; sfx.play(); }
-    else if (e.t === 'flip') { who = e.who; fl = e.card; sfx.flip(); }
-    else if (e.t === 'capture') { e.cards.forEach((c) => got.add(c)); sfx.take(); if (e.who === you) tutorialSignal('capture'); }
-    else if (e.t === 'special') { big = SPECIAL[e.kind] || ''; sfx.special(); tutorialSignal('special'); }
+    if (!fx) {
+      if (e.t === 'play') sfx.play();
+      else if (e.t === 'flip') sfx.flip();
+      else if (e.t === 'capture') sfx.take();
+    }
+    if (e.t === 'capture' && e.who === you) tutorialSignal('capture');
+    else if (e.t === 'special') { big = SPECIAL[e.kind] || ''; bigAt = fx ? FX.play + 80 : 0; snd(sfx.special, bigAt); tutorialSignal('special'); }
     else if (e.t === 'steal') e.cards.forEach((c) => got.add(c));
-    else if (e.t === 'go') { big = `${e.n}고!`; sfx.go(); }
-    else if (e.t === 'stop') { big = '스톱!'; sfx.stop(); }
+    else if (e.t === 'capture') e.cards.forEach((c) => got.add(c));
+    else if (e.t === 'go') { big = `${e.n}고!`; bigAt = Math.max(0, total - 120); snd(sfx.go, bigAt); }
+    else if (e.t === 'stop') { big = '스톱!'; bigAt = Math.max(0, total - 120); snd(sfx.stop, bigAt); }
   }
   for (const w of [0, 1]) { const r = lastTurn[w]; if (r) r.note = r.expect && !r.stolen.length; }
-  if (who >= 0) { strip = { who, play: pl, flip: fl }; stripUntil = performance.now() + 1600; setTimeout(render, 1650); }
-  fresh = got; setTimeout(() => { if (fresh === got) { fresh = new Set(); render(); } }, 900);
-  if (big) toast(big);
+  fresh = fx ? new Set() : got; if (!fx) setTimeout(() => { if (fresh === got) { fresh = new Set(); render(); } }, 900);
+  if (big) { if (fx) later(() => toast(big), off + bigAt); else toast(big); }
 }
 
 // ---------- 입력 ----------
@@ -268,7 +426,7 @@ function doAct(a) {
 function startCpu(level, carry = 1) {
   leaveOnline();
   clearTimeout(cpuTimer); clearTimeout(overTimer);
-  mode = level; phase = 'play'; selCard = null; strip = null; lastTurn = [null, null]; fresh = new Set(); busyUntil = 0;
+  mode = level; phase = 'play'; selCard = null; strip = null; lastTurn = [null, null]; fresh = new Set(); fxReset(); busyUntil = 0;
   st = L.newGame(Math.random, firstSeat, carry);
   hideOverlay(); render();
   if (st.carry > 1) toast(`이월 ×${st.carry}!`);
@@ -276,10 +434,11 @@ function startCpu(level, carry = 1) {
 }
 function afterLocal() {
   render();
-  if (st.phase === 'over') { overTimer = setTimeout(showResult, T.over); return; }
-  if (st.phase === 'gostop' && st.turn === 0) { showGoStop(); return; }
-  if (st.phase === 'chongtong' && st.turn === 0) { showChongtong(); return; }
-  if (st.turn === 1) cpuTimer = setTimeout(cpuAct, T.cpu);
+  const wait = Math.max(0, fxEnd - performance.now());
+  if (st.phase === 'over') { overTimer = setTimeout(showResult, T.over + wait); return; }
+  if (st.phase === 'gostop' && st.turn === 0) { afterFx(showGoStop); return; }
+  if (st.phase === 'chongtong' && st.turn === 0) { afterFx(showChongtong); return; }
+  if (st.turn === 1) cpuTimer = setTimeout(cpuAct, Math.max(T.cpu, wait + 280));
 }
 function cpuAct() {
   if (phase !== 'play' || !st || online() || st.phase === 'over' || st.turn !== 1) return;
@@ -291,7 +450,7 @@ function cpuAct() {
 function showTitle() {
   leaveOnline();
   clearTimeout(cpuTimer); clearTimeout(overTimer);
-  mode = 'easy'; phase = 'title'; st = L.newGame(Math.random, 0); selCard = null; strip = null; lastTurn = [null, null]; fresh = new Set(); busyUntil = 0;
+  mode = 'easy'; phase = 'title'; st = L.newGame(Math.random, 0); selCard = null; strip = null; lastTurn = [null, null]; fresh = new Set(); fxReset(); busyUntil = 0;
   render();
   const on = loadJson(ONLINE_KEY);
   showOverlay(`
@@ -448,17 +607,17 @@ function applyRoom(r) {
   netDown = false; waitingNet = false;
   saveSession({ code: r.code, token: r.token });
   deadline = performance.now() + r.remain;
-  if (newGame) { seenSeq = r.seq; selCard = null; strip = null; lastTurn = [null, null]; fresh = new Set(); }
+  if (newGame) { seenSeq = r.seq; selCard = null; strip = null; lastTurn = [null, null]; fresh = new Set(); fxReset(); }
   if (r.state === 'waiting') { phase = 'title'; showWaiting(); render(); return; }
   phase = r.state === 'playing' ? 'play' : 'over';
   if (newGame && r.state === 'playing') { sfx.take(); say(''); if (r.carry > 1) toast(`이월 ×${r.carry}!`); }
-  if (!($('overlay').dataset.screen === 'confirm') && r.state !== 'over') {
-    if (r.phase === 'gostop' && r.turn === r.you) showGoStop(); else if (r.phase === 'chongtong' && r.turn === r.you) showChongtong(); else hideOverlay();
-  }
   if (r.seq > seenSeq && !newGame) { onEvents(r.events, r.you); }
+  if (!($('overlay').dataset.screen === 'confirm') && r.state !== 'over') {
+    if (r.phase === 'gostop' && r.turn === r.you) afterFx(showGoStop); else if (r.phase === 'chongtong' && r.turn === r.you) afterFx(showChongtong); else hideOverlay();
+  }
   seenSeq = r.seq;
   render();
-  if (r.state === 'over') setTimeout(() => { if (room && room.state === 'over' && phase === 'over') showResult(); }, T.over);
+  if (r.state === 'over') setTimeout(() => { if (room && room.state === 'over' && phase === 'over') showResult(); }, T.over + Math.max(0, fxEnd - performance.now()));
 }
 function showOnline(error = '') {
   leaveOnline();
@@ -568,6 +727,6 @@ else showTitle();
 
 /* @test-hooks:start */
 window.addEventListener('resize', () => { fitCap($('oppCap'), 14); fitCap($('myCap'), 13); });
-window.__gs = { setState(s) { st = s; mode = 'easy'; phase = 'play'; totals = [0, 0]; hideOverlay(); render(); afterLocal(); }, showResult, get st() { return st; }, get mode() { return mode; }, get phase() { return phase; }, get room() { return room; }, get selCard() { return selCard; }, T, doAct, startCpu, render, view, L };
+window.__gs = { setState(s) { st = s; mode = 'easy'; phase = 'play'; totals = [0, 0]; fxReset(); busyUntil = 0; hideOverlay(); render(); afterLocal(); }, get fxEnd() { return fxEnd; }, get ghosts() { return ghosts.size; }, showResult, get st() { return st; }, get mode() { return mode; }, get phase() { return phase; }, get room() { return room; }, get selCard() { return selCard; }, T, doAct, startCpu, render, view, L };
 /* @test-hooks:end */
 })();

@@ -128,6 +128,18 @@
   #strip { width:44px; flex:none; display:flex; flex-direction:column; align-items:center; gap:1px; pointer-events:none; min-height:128px; }
   #strip .lbl { font-size:10px; color:#fff; text-shadow:0 1px 0 rgba(0,0,0,.6); white-space:nowrap; height:12px; }
   #strip .ar { color:#fff; font-size:12px; line-height:1; }
+  /* 착착 치는 연출: 날아가는 카드(복사본) 층 */
+  #fx { position:absolute; inset:0; pointer-events:none; perspective:700px; z-index:6; }
+  .fx { position:absolute; will-change:transform; filter:drop-shadow(0 6px 3px rgba(0,0,0,.35)); }
+  .fx .fxi { position:relative; width:100%; height:100%; transform-style:preserve-3d; }
+  .fx .ff, .fx .fb { position:absolute; inset:0; backface-visibility:hidden; -webkit-backface-visibility:hidden; }
+  .fx .fb { transform:rotateY(180deg); }
+  .fx .cd { width:100%; height:100%; aspect-ratio:auto; filter:none; }
+  .fxring { position:absolute; border-radius:50%; border:3px solid rgba(255,255,255,.9); pointer-events:none; }
+  .cd.fx-hide { visibility:hidden !important; }
+  #table.hit { animation:hit .15s ease-out; }
+  @keyframes hit { 0% { transform:translateY(0); } 30% { transform:translateY(2.5px); } 65% { transform:translateY(-1px); } 100% { transform:translateY(0); } }
+  @media (prefers-reduced-motion: reduce) { #table.hit { animation:none; } }
   /* 방금 한 일: 상대와 내가 마지막으로 낸 패 · 뒤집은 패 · 먹은 패 · 뺏은 피 */
   #last { display:flex; flex-direction:column; gap:2px; min-height:60px; }
   #last .lr { display:flex; align-items:center; gap:3px; height:29px; padding:0 6px; border-radius:8px; background:rgba(0,0,0,.22); color:#fff; font-size:10px; white-space:nowrap; overflow:hidden; }
@@ -196,6 +208,7 @@
         <div id="actions"></div>
         <div id="hand"></div>
         <div id="toast"></div>
+        <div id="fx"></div>
       </div>
       <div id="msg"></div>
       <div id="overlay"></div>
