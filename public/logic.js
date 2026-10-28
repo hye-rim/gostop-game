@@ -12,6 +12,7 @@
 // - 나가리(무승부)가 나면 다음 판 점수에 x2 (또 나가리면 x4, 한도 x8)가 이월된다
 const LOGIC_GOSTOP = (() => {
 const THRESH = 7;                          // 이 점수 이상이면 고/스톱을 고른다
+const SAMPPEOK_POINTS = 10;                 // 3연뻑(내 차례 세 번 연속 뻑)으로 바로 이기면 받는 점수
 const CHONGTONG_POINTS = 10;               // 총통으로 바로 이기면 받는 점수
 const CARRY_MAX = 8;                       // 나가리가 이어질 때 이월 배수의 한도
 
@@ -107,6 +108,7 @@ function newGame(rand = Math.random, first = 0, carry = 1) {
       ctx: null,                                   // 지금 진행 중인 차례의 임시 정보
       goCount: [0, 0], lastGo: [0, 0], shakes: [0, 0], bombs: [0, 0], bombPass: [0, 0],   // bombPass: 폭탄으로 받은 폭탄패(빈 패) 수. 내면 손패 없이 더미만 뒤집는다
       shaken: {}, ppeok: {},                       // 흔들기 한 달 · 뻑이 쌓인 달 (누가 쌓았나)
+      ppeokRun: [0, 0],                            // 내 차례에서 이어서 뻑을 한 횟수 (3이면 3연뻑)
       gukjin: [null, null],                        // 국진(9월 열끗)을 가진 사람이 고른 쓰임: 'yeol' | 'ssang'
       events: [], seq: 0, plies: 0, result: null,
     };
@@ -117,7 +119,7 @@ function clone(st) {
   return {
     ...st, deck: st.deck.slice(), floor: st.floor.slice(), hands: st.hands.map((h) => h.slice()), cap: st.cap.map((c) => c.slice()),
     ctx: st.ctx ? { ...st.ctx, held: st.ctx.held.slice(), gain: st.ctx.gain.slice(), options: st.ctx.options ? st.ctx.options.slice() : null } : null,
-    chong: (st.chong || []).slice(), goCount: st.goCount.slice(), lastGo: st.lastGo.slice(), shakes: st.shakes.slice(), bombs: st.bombs.slice(), bombPass: (st.bombPass || [0, 0]).slice(), shaken: { ...st.shaken }, ppeok: { ...st.ppeok }, gukjin: (st.gukjin || [null, null]).slice(),
+    chong: (st.chong || []).slice(), goCount: st.goCount.slice(), lastGo: st.lastGo.slice(), shakes: st.shakes.slice(), bombs: st.bombs.slice(), bombPass: (st.bombPass || [0, 0]).slice(), shaken: { ...st.shaken }, ppeok: { ...st.ppeok }, ppeokRun: (st.ppeokRun || [0, 0]).slice(), gukjin: (st.gukjin || [null, null]).slice(),
     events: [], result: st.result ? { ...st.result } : null,
   };
 }
@@ -238,6 +240,15 @@ function finishTurn2(st) {
   }
   st.ctx = null;
   st.plies++;
+  st.ppeokRun[p] = ctx.ppeok ? st.ppeokRun[p] + 1 : 0;
+  if (st.ppeokRun[p] >= 3) {                                                 // 3연뻑: 내 차례 세 번 연속 뻑이면 바로 이긴다
+    emit(st, { t: 'special', kind: 'sampeok', who: p });
+    st.phase = 'over';
+    const mult = st.carry > 1 ? [`나가리 이월 ×${st.carry}`] : [];
+    st.result = { winner: p, reason: 'sampeok', base: SAMPPEOK_POINTS, goAdd: 0, mult, multiplier: st.carry, points: SAMPPEOK_POINTS * st.carry, parts: scoreOf([]), carry: st.carry, nextCarry: 1 };
+    emit(st, { t: 'over', winner: p, reason: 'sampeok', points: st.result.points });
+    return;
+  }
   const s = score(st, p).total;
   if (!ctx.ppeok && s >= THRESH && s > st.lastGo[p]) {
     if (spare(st, p) === 0) { emit(st, { t: 'stop', who: p }); endGame(st, p, 'stop'); return; }   // 내 손에 패(폭탄패 포함)가 없으면 고를 수 없다: 스톱 (상대 손패가 남았어도)
@@ -492,6 +503,6 @@ function aiPick(st, level = 'easy', rand = Math.random) {
   return best;
 }
 
-return { THRESH, CHONGTONG_POINTS, CARRY_MAX, nextCarry, fourOf, GUKJIN, CARDS, MONTH_NAMES, HONG, CHO, CHEONG, BIRDS, monthOf, card, rng, shuffle, scoreOf, newGame, clone, score, legalActions, apply, aiPick, steal, countMonth };
+return { THRESH, SAMPPEOK_POINTS, CHONGTONG_POINTS, CARRY_MAX, nextCarry, fourOf, GUKJIN, CARDS, MONTH_NAMES, HONG, CHO, CHEONG, BIRDS, monthOf, card, rng, shuffle, scoreOf, newGame, clone, score, legalActions, apply, aiPick, steal, countMonth };
 })();
 if (typeof module !== 'undefined') module.exports = LOGIC_GOSTOP;

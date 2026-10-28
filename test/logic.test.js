@@ -689,3 +689,26 @@ test('jjok plus sseul steals two pi, and a ssang gukjin counts as a pi', () => {
   play(c, id(2, 3));
   assert.strictEqual(c.cap[1].length, 0);
 });
+
+test('three ppeok in a row on your own turns wins at once', () => {
+  const st = S({ h0: [id(2, 3), id(3, 3), id(4, 3)], h1: [id(9, 2), id(9, 3), id(10, 3)], floor: [id(2, 0), id(3, 0), id(4, 0), id(8, 0)], turn: 0 });
+  st.deck = [id(4, 1), id(9, 1), id(3, 1), id(10, 2), id(2, 1)];
+  const go = (c) => { assert.ok(L.apply(st, { type: 'play', card: c })); };
+  go(id(2, 3)); assert.deepStrictEqual(kinds(st), ['ppeok']); assert.strictEqual(st.ppeokRun[0], 1);
+  go(id(9, 2)); assert.strictEqual(st.ppeokRun[0], 1); assert.strictEqual(st.ppeokRun[1], 0);
+});
+
+test('a turn without ppeok resets the run, and the third in a row ends the game', () => {
+  const st = S({ h0: [id(2, 3), id(5, 3)], h1: [id(9, 2)], floor: [id(2, 0), id(8, 0)], flip: id(2, 1) });
+  st.ppeokRun = [2, 0];
+  play(st, id(2, 3));
+  assert.strictEqual(st.phase, 'over');
+  assert.strictEqual(st.result.reason, 'sampeok');
+  assert.strictEqual(st.result.winner, 0);
+  assert.strictEqual(st.result.points, L.SAMPPEOK_POINTS);
+  const b = S({ h0: [id(2, 3), id(5, 3)], h1: [id(9, 2)], floor: [id(8, 0)], flip: id(6, 1) });
+  b.ppeokRun = [2, 0];
+  play(b, id(2, 3));
+  assert.strictEqual(b.ppeokRun[0], 0);
+  assert.notStrictEqual(b.phase, 'over');
+});

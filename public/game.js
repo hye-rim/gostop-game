@@ -362,7 +362,7 @@ function clearStaleGhosts(v) {                                       // 연출�
 }
 
 // ---------- 일어난 일 처리 (소리 · 알림 · 마지막 한 차례) ----------
-const SPECIAL = { chongtong: '총통!', jjok: '쪽!', ddadak: '따닥!', ppeok: '뻑!', jappeok: '자뻑!', ppeokeat: '뻑 먹기!', firstthree: '석 장 먹기!', sseul: '쓸!', bomb: '폭탄!', shake: '흔들기!' };
+const SPECIAL = { chongtong: '총통!', jjok: '쪽!', ddadak: '따닥!', ppeok: '뻑!', sampeok: '3연뻑!', jappeok: '자뻑!', ppeokeat: '뻑 먹기!', firstthree: '석 장 먹기!', sseul: '쓸!', bomb: '폭탄!', shake: '흔들기!' };
 function onEvents(evs, you) {
   if (!evs || !evs.length) return;
   const fx = fxStart(evs, you);                                      // 화면이 바뀌기 전에 자리를 재고, 연출을 예약한다
@@ -523,6 +523,7 @@ function breakdown(r, v) {
   const p = r.parts || {};
   const lines = [];
   if (r.reason === 'chongtong') lines.push(`총통 (${(r.month || 0) + 1}월 네 장) <b>${r.points}점</b>`);
+  if (r.reason === 'sampeok') lines.push(`3연뻑 <b>${r.points}점</b>`);
   if (r.reason === 'stop' || r.reason === 'exhaust') {
     lines.push(`광 ${p.gwang || 0} · 열끗 ${p.yeol || 0} · 띠 ${p.tti || 0} · 피 ${p.pi || 0} = ${p.total || 0}점`);
     if (r.goAdd) lines.push(`고 +${r.goAdd}점`);
@@ -540,6 +541,7 @@ function showResult() {
   const why = {
     stop: won ? '스톱! 내가 점수를 냈어요' : '상대가 스톱했어요',
     chongtong: won ? '총통! 손패 같은 달 네 장으로 바로 이겼어요' : '상대가 총통으로 바로 이겼어요',
+    sampeok: won ? '3연뻑! 세 번 연속 뻑으로 바로 이겼어요' : '상대가 3연뻑으로 바로 이겼어요',
     exhaust: won ? '패를 다 썼어요 — 고를 해서 내가 이겼어요' : '패를 다 썼어요 — 상대가 이겼어요',
     nagari: '아무도 못 났어요 (나가리)',
     resign: won ? '상대가 기권했어요' : '기권했어요',
