@@ -38,6 +38,7 @@ const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
+  '.webp': 'image/webp',
 };
 
 const server = http.createServer((req, res) => {
@@ -50,7 +51,8 @@ const server = http.createServer((req, res) => {
     if (err) { res.writeHead(404); res.end('Not found'); return; }
     res.writeHead(200, {
       'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream',
-      'Cache-Control': 'no-cache',
+      'Cache-Control': path.extname(filePath) === '.webp' ? 'public, max-age=86400' : 'no-cache',   // 카드 그림은 하루 동안 다시 받지 않는다
+      'X-Content-Type-Options': 'nosniff',
     });
     res.end(data);
   });

@@ -102,21 +102,23 @@
   .cap { display:flex; gap:8px; min-height:38px; align-items:flex-start; }
   .cap .grp { display:flex; padding-left:8px; min-width:12px; }
   .cap .grp .cd { margin-left:-12px; }
-  .cap.small { min-height:34px; }
-  .cap.small .cd { width:22px; height:34px; margin-left:-8px; border-radius:4px; }
+  .cap.small { min-height:36px; }
+  .cap.small .cd { width:22px; margin-left:-8px; }
   .cap.small .grp { padding-left:6px; }
   /* 카드 */
-  .cd { width:25px; height:38px; border-radius:5px; border:1.5px solid #2b1d52; position:relative; flex:none; box-shadow:0 2px 0 rgba(0,0,0,.35); background:#fbf4e2; overflow:hidden; }
-  .cd svg.art { display:block; width:100%; height:100%; }
-  .cd.back { background:repeating-linear-gradient(45deg,#c0392b 0 4px,#a93226 4px 8px); }
-  #field .cd, #strip .cd { width:40px; height:60px; border-radius:7px; }
+  .cd { width:25px; aspect-ratio:104/169; border-radius:12%/7%; position:relative; flex:none; filter:drop-shadow(0 2px 0 rgba(0,0,0,.35)); background:transparent; }
+  .cd img.art { display:block; width:100%; height:100%; pointer-events:none; user-select:none; -webkit-user-select:none; -webkit-user-drag:none; }
+  .cd.ssang::before, .cd.ssang::after { content:''; position:absolute; bottom:5%; width:25%; aspect-ratio:1; border-radius:50%; background:#d62828; border:.5px solid #fff; box-shadow:0 0 0 .5px rgba(0,0,0,.5); box-sizing:border-box; }
+  .cd.ssang::before { right:36%; } .cd.ssang::after { right:7%; }
+  .cd.back { background:repeating-linear-gradient(45deg,#c0392b 0 4px,#a93226 4px 8px); border:2px solid #fff; border-radius:12%/7%; box-sizing:border-box; }
+  #field .cd, #strip .cd { width:40px; }
   #hand { display:flex; justify-content:center; gap:2px; padding-top:10px; min-height:66px; }
-  #hand .cd { width:32px; height:50px; flex:0 1 32px; min-width:0; cursor:pointer; transition:transform .12s; }
+  #hand .cd { width:32px; flex:0 1 32px; min-width:0; cursor:pointer; transition:transform .12s; }
   #hand .cd.sel { transform:translateY(-10px); box-shadow:0 0 0 3px #ffd23f, 0 5px 0 rgba(0,0,0,.35); }
   #hand .cd.dim { filter:brightness(.7); }
   #field { display:flex; gap:6px; align-items:flex-start; min-height:132px; position:relative; }
   #deck { width:44px; flex:none; display:flex; flex-direction:column; align-items:center; gap:2px; color:#fff; font-size:11px; }
-  #deck .cd { width:40px; height:60px; }
+  #deck .cd { width:40px; }
   #floor { display:flex; flex-wrap:wrap; gap:4px; flex:1; align-content:flex-start; min-height:128px; }
   #floor .cd.match { box-shadow:0 0 0 3px #ffd23f, 0 0 12px 2px rgba(255,210,63,.9); animation:pulse .6s infinite alternate; cursor:pointer; }
   #floor .cd.opt { box-shadow:0 0 0 3px #ff5fa2, 0 0 12px 2px rgba(255,95,162,.9); animation:pulse .5s infinite alternate; cursor:pointer; }
@@ -136,7 +138,7 @@
   #last .lr .t.no { opacity:.7; }
   #last .lr .nt { color:#ffd0d8; }
   #last .lr .gc { display:flex; }
-  #last .cd { width:18px; height:28px; border-width:1px; border-radius:3px; box-shadow:none; flex:none; }
+  #last .cd { width:18px; flex:none; filter:none; }
   #last .gc .cd + .cd { margin-left:-8px; }
   #actions { display:flex; gap:6px; justify-content:center; min-height:30px; flex-wrap:wrap; }
   #actions button { font:inherit; font-size:14px; color:var(--ink); background:var(--yellow); border:3px solid var(--ink); border-radius:999px; box-shadow:0 3px 0 var(--ink); padding:2px 12px; cursor:pointer; }

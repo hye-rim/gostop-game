@@ -298,6 +298,7 @@ function showTitle() {
     <h1>맞고</h1>
     <p><b>화투</b> 두 사람 대결! 점수를 먼저 내요</p>
     <div class="card2" style="font-size:13px">🎴 손패를 내서 같은 달 바닥 패를 <b>가져와요</b>, 더미 한 장도 뒤집어 또 맞춰요<br>⭐ 광·열끗·띠·피로 <b>7점</b>이 나면 <b>고</b>(계속) 또는 <b>스톱</b>(끝내고 점수)<br>💥 쪽·따닥·뻑·쓸·폭탄·흔들기가 있어요</div>
+    <p style="font-size:10px;opacity:.7;margin:2px 0 0">화투 그림: Marcus Richert · Louie Mantia Jr. (CC BY-SA 4.0)</p>
     <div class="col"><button data-act="cpu" data-lv="easy">🤖 컴퓨터랑 · 쉬움</button><button class="sub" data-act="cpu" data-lv="hard">🤖 컴퓨터랑 · 어려움</button><button class="sub" data-act="online">🌐 온라인 대전${on.w || on.l ? ` · ${on.w || 0}승 ${on.l || 0}패` : ''}</button></div>`);
 }
 
