@@ -100,12 +100,12 @@ function view() {
   if (online()) {
     if (!room) return null;
     return { you: room.you, turn: room.turn, phase: room.phase, hand: room.hand, handN: room.handN, deckN: room.deckN, floor: room.floor, cap: room.cap, options: room.options,
-      legal: room.legal || [], goCount: room.goCount, shakes: room.shakes, bombs: room.bombs, names: [0, 1].map((s) => (s === room.you ? '나' : ((room.players[s] || {}).name || '상대'))),
+      legal: room.legal || [], goCount: room.goCount, shakes: room.shakes, bombs: room.bombs, gukjin: room.gukjin || [null, null], names: [0, 1].map((s) => (s === room.you ? '나' : ((room.players[s] || {}).name || '상대'))),
       total: room.total, result: room.result, over: room.state === 'over', state: room.state, carry: room.carry, nextCarry: room.nextCarry };
   }
   if (!st) return null;
   return { you: 0, turn: st.turn, phase: st.phase, hand: st.hands[0], handN: [st.hands[0].length, st.hands[1].length], deckN: st.deck.length, floor: st.floor, cap: st.cap,
-    options: st.ctx && st.ctx.options, legal: st.turn === 0 ? L.legalActions(st) : [], goCount: st.goCount, shakes: st.shakes, bombs: st.bombs, names: ['나', '컴퓨터'],
+    options: st.ctx && st.ctx.options, legal: st.turn === 0 ? L.legalActions(st) : [], goCount: st.goCount, shakes: st.shakes, bombs: st.bombs, gukjin: st.gukjin || [null, null], names: ['나', '컴퓨터'],
     total: totals, result: st.result, over: st.phase === 'over', state: st.phase === 'over' ? 'over' : 'playing', carry: st.carry, nextCarry: st.result ? st.result.nextCarry : 1 };
 }
 const myTurn = (v) => !!v && v.state === 'playing' && v.turn === v.you && !netDown && !waitingNet && performance.now() >= busyUntil;
@@ -134,12 +134,13 @@ function lastRow(r, name) {
   if (r.flip !== undefined) h += `<span class="t">뒤집음</span>${mini(r.flip)}`;
   h += r.got.length ? `<span class="t">→ 먹음</span><span class="gc">${r.got.map(mini).join('')}</span>` : '<span class="t no">→ 못 먹음</span>';
   if (r.special.length) h += `<span class="t sp">${r.special.join(' ')}</span>`;
+  if (r.shakeCards && r.shakeCards.length) h += `<span class="gc">${r.shakeCards.map(mini).join('')}</span>`;
   if (r.stolen.length) h += `<span class="t st">피 뺏음</span><span class="gc">${r.stolen.map(mini).join('')}</span>`;
   else if (r.note) h += '<span class="nt">상대 피 없음</span>';
   return `<div class="lr">${h}</div>`;
 }
-function scoreText(ids) {
-  const s = L.scoreOf(ids);
+function scoreText(ids, mode) {
+  const s = L.scoreOf(ids, mode);
   return `광${s.counts.gwang} 열${s.counts.yeol} 띠${s.counts.tti} 피${s.counts.pi} <b>${s.total}점</b>`;
 }
 function render() {
@@ -148,7 +149,8 @@ function render() {
   const you = v.you, opp = 1 - you;
   // 상대
   const goTxt = (p) => (v.goCount[p] ? ` · ${v.goCount[p]}고` : '');
-  $('oppWho').innerHTML = `<span class="nm">${esc(v.names[opp])}</span><span class="sc">${scoreText(v.cap[opp])}${goTxt(opp)}</span><span class="hc">${Array.from({ length: Math.min(10, v.handN[opp]) }, () => '<i></i>').join('')}</span>`;
+  const shakeTxt = (p) => (v.shakes[p] ? ` · 흔들${v.shakes[p]}` : '');
+  $('oppWho').innerHTML = `<span class="nm">${esc(v.names[opp])}</span><span class="sc">${scoreText(v.cap[opp], v.gukjin[opp])}${goTxt(opp)}${shakeTxt(opp)}</span><span class="hc">${Array.from({ length: Math.min(10, v.handN[opp]) }, () => '<i></i>').join('')}</span>`;
   $('oppCap').innerHTML = capHtml(v.cap[opp], true);
   fitCap($('oppCap'), 14);
   // 더미 · 바닥
@@ -166,7 +168,7 @@ function render() {
   // 나
   $('myCap').innerHTML = capHtml(v.cap[you], false);
   fitCap($('myCap'), 13);
-  $('meWho').innerHTML = `<span class="nm">${esc(v.names[you])}</span><span class="sc">${scoreText(v.cap[you])}${goTxt(you)}</span>`;
+  $('meWho').innerHTML = `<span class="nm">${esc(v.names[you])}</span><span class="sc">${scoreText(v.cap[you], v.gukjin[you])}${goTxt(you)}${shakeTxt(you)}</span>`;
   $('hand').innerHTML = v.hand.slice().sort((a, b) => a - b).map((id) => cd(id, `${selCard === id ? 'sel' : ''}${v.turn === v.you && v.phase === 'play' ? '' : ' dim'}`)).join('');
   // 흔들기 · 폭탄 버튼
   const acts = canPlay ? v.legal.filter((a) => a.type === 'shake' || a.type === 'bomb') : [];
@@ -177,9 +179,10 @@ function render() {
 function hint(v) {
   let m = '';
   if (v.over) m = '';
-  else if (v.turn !== v.you) m = v.phase === 'chongtong' ? '상대가 총통을 확인하는 중…' : online() ? `${v.names[v.turn]}이(가) 생각 중…` : '컴퓨터 차례예요…';
+  else if (v.turn !== v.you) m = v.phase === 'chongtong' ? '상대가 총통을 확인하는 중…' : v.phase === 'gukjin' ? '상대가 국진 쓰임을 고르는 중…' : online() ? `${v.names[v.turn]}이(가) 생각 중…` : '컴퓨터 차례예요…';
   else if (v.phase === 'play') m = selCard === null ? '내 차례예요. 낼 패를 눌러요' : '같은 패를 다시 누르거나, 빛나는 바닥 패를 눌러 내요';
   else if (v.phase === 'chooseHand' || v.phase === 'chooseFlip') m = '같은 달 패가 두 장이에요. 가져올 패를 눌러요 (분홍 테두리)';
+  else if (v.phase === 'gukjin') m = '국진(9월 술잔)을 열끗으로 쓸지 쌍피로 쓸지 골라요';
   else if (v.phase === 'gostop') m = '고 · 스톱을 골라요';
   else if (v.phase === 'chongtong') m = '총통이에요! 바로 이길지 고르세요';
   say(m);
@@ -208,7 +211,7 @@ function hideOverlay() { $('overlay').classList.add('hidden'); }
 // 패를 내면 손에서 날아가 바닥에 "착" 내려앉고, 상대 패는 손에서 뒤집혀 나오고, 더미 한 장이 뒤집히고, 먹은 패는 먹은 자리로 쓸려 간다.
 // 판 상태는 이미 바뀌어 있으니, 날아가는 동안 도착할 자리의 진짜 카드는 숨겨 두고(pendingHide) 떠다니는 복사본(ghost)으로 보여 준다.
 const REDUCE = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-const FX = { play: 260, flip: 340, sweep: 330, beat: 190 };           // 시간(ms): 내기 · 뒤집기 · 쓸어 가기 · 동작 사이 쉼
+const FX = { play: 260, flip: 340, sweep: 330, beat: 190, shake: 1900 };           // 시간(ms): 내기 · 뒤집기 · 쓸어 가기 · 동작 사이 쉼
 let pendingHide = new Set();         // 날아가는 중이라 제자리에서는 숨겨 둔 카드 번호
 let ghosts = new Map();              // 카드 번호 -> 화면에 떠 있는 복사본 (먹기를 기다리는 것 포함)
 let fxEnd = 0, fxTimers = [];
@@ -265,6 +268,7 @@ function fxPlan(evs) {
   for (const e of evs) {
     if (e.t === 'play') { items.push({ e, at: t }); t += FX.play + FX.beat; }
     else if (e.t === 'flip') { items.push({ e, at: t }); t += FX.flip + FX.beat; }
+    else if (e.t === 'special' && e.kind === 'shake') { items.push({ e, at: t }); t += FX.shake + FX.beat; }          // 흔든 패를 모두에게 보여 준다
     else if ((e.t === 'capture' || e.t === 'steal') && e.cards.length) { items.push({ e, at: t }); t += FX.sweep + 60 * (e.cards.length - 1) + FX.beat; }
   }
   return { items, total: t };
@@ -281,7 +285,7 @@ function fxStart(evs, you) {
     opp: ($('oppWho').querySelector('.hc i:last-child') || $('oppWho').querySelector('.hc') || $('oppWho')).getBoundingClientRect(),
   };
   const ids = new Set();
-  for (const { e } of plan.items) (e.cards || [e.card]).forEach((c) => { pendingHide.add(c); ids.add(c); });
+  for (const { e } of plan.items) { if (e.t === 'special') continue; (e.cards || [e.card]).forEach((c) => { pendingHide.add(c); ids.add(c); }); }
   fxEnd = now + off + plan.total;
   busyUntil = Math.max(busyUntil, fxEnd);
   setTimeout(() => runFx(plan, you, pre, off, ids), 0);              // 새 화면이 그려진 뒤에
@@ -291,6 +295,7 @@ function fxStart(evs, you) {
 function runFx(plan, you, pre, off, ids) {
   const post = { floor: rectsOf('#floor .cd'), cap: rectsOf('.cap .cd'), myCap: $('myCap').getBoundingClientRect(), oppCap: $('oppCap').getBoundingClientRect(), floorBox: $('floor').getBoundingClientRect() };
   const played = new Set(plan.items.filter(({ e }) => e.t === 'play' || e.t === 'flip').map(({ e }) => e.card));
+  const names = (view() || {}).names || ['나', '상대'];
   // 먹혀서 새 화면에서는 사라진 바닥 패는 먹기 전까지 제자리에 복사본으로 남겨 둔다
   for (const { e } of plan.items) if (e.t === 'capture') e.cards.forEach((id) => { if (pre.floor.has(id) && !post.floor.has(id) && !played.has(id) && !ghosts.has(id)) ghosts.set(id, mkGhost(id, pre.floor.get(id), false)); });
   const matchSpot = (id) => {                                         // 같은 달 바닥 패 위(없으면 바닥 가운데)
@@ -306,7 +311,8 @@ function runFx(plan, you, pre, off, ids) {
   };
   for (const { e, at } of plan.items) {
     const t0 = off + at;
-    if (e.t === 'play') later(() => {
+    if (e.t === 'special') later(() => revealShake(e, e.who === you ? '내가' : names[e.who]), t0);
+    else if (e.t === 'play') later(() => {
       const id = e.card, mine = e.who === you, src = mine ? pre.hand.get(id) : pre.opp;
       if (!src) { unhide(id); return; }
       const el = mkGhost(id, src, !mine); ghosts.set(id, el);
@@ -334,6 +340,15 @@ function runFx(plan, you, pre, off, ids) {
   }
   later(() => ids.forEach((id) => { if (!ghosts.has(id)) unhide(id); }), off + plan.total + 120);   // 혹시 남은 숨김 정리
 }
+function revealShake(e, who) {                                       // 흔들기: 가운데에 흔든 패를 펼쳐 잠시 보여 준다
+  const el = document.createElement('div');
+  el.className = 'fxshake';
+  el.innerHTML = `<div class="sl">${esc(who)} 흔들었어요!</div><div class="sc">${e.month + 1}월 ${L.MONTH_NAMES[e.month]} ${(e.cards || []).length}장</div><div class="sk">${(e.cards || []).map((id) => cd(id, '', true)).join('')}</div>`;
+  $('fx').appendChild(el);
+  sfx.special(); impact(el.getBoundingClientRect(), true);
+  el.animate([{ transform: 'translateX(-50%) scale(.5)', opacity: 0 }, { transform: 'translateX(-50%) scale(1.12)', opacity: 1, offset: 0.14 }, { transform: 'translateX(-50%) scale(1)', opacity: 1, offset: 0.2 }, { transform: 'translateX(-50%) scale(1)', opacity: 1, offset: 0.88 }, { transform: 'translateX(-50%) scale(.92)', opacity: 0 }], { duration: FX.shake, easing: 'ease-out', fill: 'forwards' });
+  later(() => el.remove(), FX.shake);
+}
 function clearStaleGhosts(v) {                                       // 연출이 끝났는데 떠 있는 복사본이 남았으면 치운다 (두 장 중 고르는 중이면 둔다)
   if (performance.now() < fxEnd || !ghosts.size) return;
   if (v && (v.phase === 'chooseHand' || v.phase === 'chooseFlip')) return;
@@ -352,21 +367,24 @@ function onEvents(evs, you) {
   const got = new Set();
   const rec = (w, fresh0) => { if (fresh0 || !lastTurn[w]) lastTurn[w] = { play: undefined, flip: undefined, got: [], stolen: [], special: [], expect: false }; return lastTurn[w]; };
   for (const e of evs) {
-    if (e.t === 'play') rec(e.who, true).play = e.card;
+    if (e.t === 'play') { const prev = lastTurn[e.who], r0 = rec(e.who, true); r0.play = e.card; if (prev && prev.shakeOnly) { r0.special = prev.special.slice(); r0.shakeCards = prev.shakeCards; } }   // 흔든 뒤 패를 내도 흔든 기록은 남긴다
     else if (e.t === 'flipOnly') rec(e.who, true);
     else if (e.t === 'flip') rec(e.who, false).flip = e.card;
     else if (e.t === 'capture') rec(e.who, false).got = e.cards.slice();
     else if (e.t === 'special' && e.kind !== 'chongtong') {
-      const r = rec(e.who, e.kind === 'bomb');
+      const r = rec(e.who, e.kind === 'bomb' || e.kind === 'shake');
       r.special.push(SPECIAL[e.kind] || '');
+      if (e.kind === 'shake') { r.shakeCards = e.cards || []; r.shakeOnly = true; }
       if (['jjok', 'ddadak', 'ppeokeat', 'jappeok', 'sseul', 'bomb'].includes(e.kind)) r.expect = true;
     } else if (e.t === 'steal') rec(e.to, false).stolen.push(...e.cards);
+    else if (e.t === 'gukjin') rec(e.who, false).special.push(e.as === 'ssang' ? '국진=쌍피' : '국진=열끗');
     if (!fx) {
       if (e.t === 'play') sfx.play();
       else if (e.t === 'flip') sfx.flip();
       else if (e.t === 'capture') sfx.take();
     }
     if (e.t === 'capture' && e.who === you) tutorialSignal('capture');
+    else if (e.t === 'special' && e.kind === 'shake' && fx) tutorialSignal('special');
     else if (e.t === 'special') { big = SPECIAL[e.kind] || ''; bigAt = fx ? FX.play + 80 : 0; snd(sfx.special, bigAt); tutorialSignal('special'); }
     else if (e.t === 'steal') e.cards.forEach((c) => got.add(c));
     else if (e.t === 'capture') e.cards.forEach((c) => got.add(c));
@@ -436,6 +454,7 @@ function afterLocal() {
   render();
   const wait = Math.max(0, fxEnd - performance.now());
   if (st.phase === 'over') { overTimer = setTimeout(showResult, T.over + wait); return; }
+  if (st.phase === 'gukjin' && st.turn === 0) { afterFx(showGukjin); return; }
   if (st.phase === 'gostop' && st.turn === 0) { afterFx(showGoStop); return; }
   if (st.phase === 'chongtong' && st.turn === 0) { afterFx(showChongtong); return; }
   if (st.turn === 1) cpuTimer = setTimeout(cpuAct, Math.max(T.cpu, wait + 280));
@@ -464,12 +483,25 @@ function showTitle() {
 // ---------- 고 · 스톱 · 결과 ----------
 function showGoStop() {
   const v = view();
-  const s = L.scoreOf(v.cap[v.you]);
+  const s = L.scoreOf(v.cap[v.you], v.gukjin[v.you]);
   const n = v.goCount[v.you];
   showOverlay(`
     <h2>${s.total}점이에요! 🎉</h2>
     <div class="brk">광 ${s.gwang}점 · 열끗 ${s.yeol}점 · 띠 ${s.tti}점 · 피 ${s.pi}점<br>${n ? `지금 ${n}고 중이에요<br>` : ''}<b>고</b>: 계속해요 (점수가 늘어요, 상대가 먼저 나면 고박!)<br><b>스톱</b>: 여기서 끝내고 점수를 받아요</div>
     <div class="row"><button data-act="go">🔥 고</button><button data-act="stop">✋ 스톱</button></div>`);
+}
+function showGukjin() {                                              // 국진(9월 술잔)을 얻었을 때: 열끗으로 쓸지 쌍피로 쓸지
+  const v = view();
+  if (!v || v.phase !== 'gukjin' || v.turn !== v.you) return;
+  const y = L.scoreOf(v.cap[v.you], 'yeol'), q = L.scoreOf(v.cap[v.you], 'ssang');
+  const line = (x) => `열끗 ${x.counts.yeol}장 · 피 ${x.counts.pi}장 → <b>${x.total}점</b>`;
+  const best = q.total > y.total ? 'ssang' : y.total > q.total ? 'yeol' : '';
+  showOverlay(`
+    <h2>국진을 얻었어요! 🍶</h2>
+    <div class="row">${cd(L.GUKJIN)}</div>
+    <p>9월 술잔(국진)은 <b>열끗</b>으로도, <b>쌍피</b>로도 쓸 수 있어요</p>
+    <div class="brk"><b>열끗으로</b>: ${line(y)}${best === 'yeol' ? ' 👍' : ''}<br><b>쌍피로</b>: ${line(q)}${best === 'ssang' ? ' 👍' : ''}</div>
+    <div class="col"><button data-act="gukjin" data-as="yeol">🐦 열끗으로 쓰기</button><button class="sub" data-act="gukjin" data-as="ssang">🍂 쌍피로 쓰기</button></div>`);
 }
 function showChongtong() {
   const v = view();
@@ -613,7 +645,7 @@ function applyRoom(r) {
   if (newGame && r.state === 'playing') { sfx.take(); say(''); if (r.carry > 1) toast(`이월 ×${r.carry}!`); }
   if (r.seq > seenSeq && !newGame) { onEvents(r.events, r.you); }
   if (!($('overlay').dataset.screen === 'confirm') && r.state !== 'over') {
-    if (r.phase === 'gostop' && r.turn === r.you) afterFx(showGoStop); else if (r.phase === 'chongtong' && r.turn === r.you) afterFx(showChongtong); else hideOverlay();
+    if (r.phase === 'gukjin' && r.turn === r.you) afterFx(showGukjin); else if (r.phase === 'gostop' && r.turn === r.you) afterFx(showGoStop); else if (r.phase === 'chongtong' && r.turn === r.you) afterFx(showChongtong); else hideOverlay();
   }
   seenSeq = r.seq;
   render();
@@ -695,6 +727,7 @@ $('overlay').addEventListener('click', (e) => {
   else if (act === 'leave') showOnline();
   else if (act === 'resign') { net.send('resign'); hideOverlay(); }
   else if (act === 'close') hideOverlay();
+  else if (act === 'gukjin') { hideOverlay(); doAct({ type: 'gukjin', as: btn.dataset.as === 'ssang' ? 'ssang' : 'yeol' }); }
   else if (act === 'go') { hideOverlay(); doAct({ type: 'go' }); }
   else if (act === 'chongtong') { hideOverlay(); doAct({ type: 'chongtong' }); }
   else if (act === 'continue') { hideOverlay(); doAct({ type: 'continue' }); }

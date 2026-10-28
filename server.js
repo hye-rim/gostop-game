@@ -151,10 +151,10 @@ function snapshot(room, seat) {
       hand: g.hands[me], handN: [g.hands[0].length, g.hands[1].length], deckN: g.deck.length,
       floor: g.floor, cap: g.cap,
       options: (g.phase === 'chooseHand' || g.phase === 'chooseFlip') && g.ctx ? g.ctx.options : null,
-      goCount: g.goCount, shakes: g.shakes, bombs: g.bombs,
+      goCount: g.goCount, shakes: g.shakes, bombs: g.bombs, gukjin: g.gukjin,
       legal: room.state === 'playing' && g.turn === me ? L.legalActions(g) : [],
     });
-  } else Object.assign(snap, { turn: 0, phase: 'play', hand: [], handN: [0, 0], deckN: 0, floor: [], cap: [[], []], options: null, goCount: [0, 0], shakes: [0, 0], bombs: [0, 0], legal: [] });
+  } else Object.assign(snap, { turn: 0, phase: 'play', hand: [], handN: [0, 0], deckN: 0, floor: [], cap: [[], []], options: null, goCount: [0, 0], shakes: [0, 0], bombs: [0, 0], gukjin: [null, null], legal: [] });
   return snap;
 }
 
@@ -290,7 +290,7 @@ const handlers = {
     if (seat && room.state === 'waiting') vacate(room, seat);
   },
 
-  // 모든 결정(패 내기 · 고르기 · 흔들기 · 폭탄 · 고 · 스톱)은 이 하나로 온다. 규칙에 어긋나거나 내 차례가 아니면 무시한다
+  // 모든 결정(패 내기 · 고르기 · 흔들기 · 폭탄 · 국진 쓰임 · 고 · 스톱)은 이 하나로 온다. 규칙에 어긋나거나 내 차례가 아니면 무시한다
   act(client, msg) {
     const room = rooms.get(client.roomCode);
     const seat = room && seatOf(room, client);
@@ -302,6 +302,7 @@ const handlers = {
     if (typeof act.type !== 'string') return;
     if (a.card !== undefined) { if (!Number.isInteger(a.card)) return; act.card = a.card; }
     if (a.month !== undefined) { if (!Number.isInteger(a.month)) return; act.month = a.month; }
+    if (a.as !== undefined) { if (a.as !== 'yeol' && a.as !== 'ssang') return; act.as = a.as; }   // 국진을 열끗으로/쌍피로
     if (!L.apply(g, act)) return;
     room.events = g.events.slice();
     room.seq++;

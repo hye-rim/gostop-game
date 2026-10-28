@@ -474,3 +474,66 @@ test('go is still offered while my hand has cards', () => {
   assert.strictEqual(st.phase, 'gostop');
   assert.deepStrictEqual(L.legalActions(st).map((a) => a.type), ['go', 'stop']);
 });
+
+// ---------- 국진(9월 열끗): 얻을 때 열끗으로 쓸지 쌍피로 쓸지 고른다 ----------
+const GUK = id(9, 0);
+const gukState = (extra = {}) => S({ h0: [id(9, 2), id(1, 2)], h1: [id(3, 2), id(4, 2)], floor: [GUK, id(10, 2)], flip: id(5, 3), ...extra });
+
+test('gukjin: taking the 9-month yeol stops the turn until its use is chosen', () => {
+  const st = gukState();
+  assert.ok(play(st, id(9, 2)));
+  assert.strictEqual(st.phase, 'gukjin');
+  assert.strictEqual(st.turn, 0, 'the turn does not pass yet');
+  assert.ok(st.cap[0].includes(GUK));
+  assert.deepStrictEqual(L.legalActions(st), [{ type: 'gukjin', as: 'yeol' }, { type: 'gukjin', as: 'ssang' }]);
+  assert.ok(!L.apply(st, { type: 'play', card: id(1, 2) }), 'nothing else until it is chosen');
+  assert.ok(!L.apply(st, { type: 'gukjin', as: 'both' }), 'only yeol or ssang');
+});
+
+test('gukjin: the chosen use decides how it scores, and the turn then goes on', () => {
+  const asYeol = gukState(); play(asYeol, id(9, 2));
+  assert.ok(L.apply(asYeol, { type: 'gukjin', as: 'yeol' }));
+  assert.deepStrictEqual(asYeol.gukjin, ['yeol', null]);
+  assert.strictEqual(asYeol.phase, 'play'); assert.strictEqual(asYeol.turn, 1);
+  assert.strictEqual(L.score(asYeol, 0).counts.yeol, 1);
+  const asSsang = gukState(); play(asSsang, id(9, 2));
+  assert.ok(L.apply(asSsang, { type: 'gukjin', as: 'ssang' }));
+  assert.strictEqual(L.score(asSsang, 0).counts.yeol, 0);
+  assert.strictEqual(L.score(asSsang, 0).counts.pi, 3, 'the 9-month hand card is a pi, the gukjin counts as two');
+  assert.ok(asSsang.events.some((e) => e.t === 'gukjin' && e.as === 'ssang'));
+});
+
+test('gukjin: scoreOf follows the chosen use, and picks the better one when none was chosen', () => {
+  const five = [id(2, 0), id(4, 0), id(5, 0), id(6, 0), GUK];                 // 열끗 4장 + 국진
+  assert.strictEqual(L.scoreOf(five, 'yeol').counts.yeol, 5);
+  assert.strictEqual(L.scoreOf(five, 'yeol').yeol, 1, 'five yeol is one point');
+  assert.strictEqual(L.scoreOf(five, 'ssang').counts.yeol, 4);
+  assert.strictEqual(L.scoreOf(five).total, 1, 'unchosen: the better one');
+  const nine = [id(1, 2), id(1, 3), id(2, 2), id(2, 3), id(3, 2), id(3, 3), id(4, 2), id(4, 3), id(5, 2), GUK];   // 피 9장 + 국진
+  assert.strictEqual(L.scoreOf(nine, 'ssang').pi, 2);
+  assert.strictEqual(L.scoreOf(nine, 'yeol').pi, 0);
+});
+
+test('gukjin: reaching 7 points with it still goes to go/stop afterwards, and the computer picks the better use', () => {
+  const gwang = [id(1, 0), id(3, 0), id(8, 0), id(11, 0), id(12, 0)];       // 광 5장 = 15점
+  const st = gukState({ cap0: gwang });
+  play(st, id(9, 2));
+  assert.strictEqual(st.phase, 'gukjin');
+  assert.ok(L.apply(st, { type: 'gukjin', as: 'yeol' }));
+  assert.strictEqual(st.phase, 'gostop');
+  const cpu = S({ h0: [], h1: [], floor: [] });
+  cpu.phase = 'gukjin'; cpu.turn = 0;
+  cpu.cap[0] = [id(2, 0), id(4, 0), id(5, 0), id(6, 0), GUK];
+  assert.deepStrictEqual(L.aiPick(cpu, 'hard'), { type: 'gukjin', as: 'yeol' }, 'five yeol scores, so it stays a yeol');
+  cpu.cap[0] = [id(1, 2), id(1, 3), id(2, 2), id(2, 3), id(3, 2), id(3, 3), id(4, 2), id(4, 3), id(5, 2), GUK];
+  assert.deepStrictEqual(L.aiPick(cpu, 'easy'), { type: 'gukjin', as: 'ssang' }, 'nine pi + two makes ten pi');
+});
+
+test('shake: the shaken cards are shown to everyone in the event', () => {
+  const st = S({ h0: [id(6, 0), id(6, 1), id(6, 2), id(1, 2)], h1: [id(9, 2)], floor: [id(10, 2)], flip: id(8, 2) });
+  assert.ok(L.apply(st, { type: 'shake', month: 5 }));
+  const ev = st.events.find((e) => e.t === 'special' && e.kind === 'shake');
+  assert.deepStrictEqual(ev.cards.slice().sort((x, y) => x - y), [id(6, 0), id(6, 1), id(6, 2)]);
+  assert.strictEqual(ev.month, 5);
+  assert.strictEqual(ev.who, 0);
+});

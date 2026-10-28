@@ -69,11 +69,11 @@ function botAct(c, level = 'hard') {
   const st = L.newGame(L.rng(1), 0);
   st.hands = [[], []]; st.hands[me] = r.hand.slice(); st.hands[1 - me] = new Array(r.handN[1 - me]).fill(0);
   st.floor = r.floor.slice(); st.cap = r.cap.map((x) => x.slice()); st.goCount = r.goCount.slice(); st.turn = r.turn; st.phase = r.phase;
-  st.shakes = r.shakes.slice(); st.bombs = r.bombs.slice(); st.ctx = r.options ? { options: r.options } : null;
+  st.shakes = r.shakes.slice(); st.bombs = r.bombs.slice(); st.gukjin = (r.gukjin || [null, null]).slice(); st.ctx = r.options ? { options: r.options } : null;
   st.deck = new Array(r.deckN).fill(0); st.shaken = {};
   let a;
   try { a = L.aiPick(st, level, Math.random); } catch (_) { a = null; }
-  const ok = a && r.legal.some((x) => x.type === a.type && x.card === a.card && x.month === a.month);
+  const ok = a && r.legal.some((x) => x.type === a.type && x.card === a.card && x.month === a.month && x.as === a.as);
   return ok ? a : r.legal[0];
 }
 async function oneAction(a, b, level) {
@@ -148,7 +148,9 @@ test('a legal play reaches both players with the events', async () => {
   await ready;
   const [a, b] = await pair();
   const first = mover(a, b), second = first === a ? b : a;
-  const card = first.room.hand[0], seq = a.room.seq;
+  // 같은 달 바닥 패가 두 장이면 고르는 중이라 뒤집기가 아직 없다 (약 8% 의 판). 그런 패는 피해서 낸다
+  const onFloor = (c) => first.room.floor.filter((f) => L.monthOf(f) === L.monthOf(c)).length;
+  const card = first.room.hand.find((c) => onFloor(c) !== 2) ?? first.room.hand[0], seq = a.room.seq;
   send(first, 'act', { a: { type: 'play', card } });
   assert.ok(await until(() => a.room.seq > seq && b.room.seq > seq));
   assert.ok(first.room.events.some((e) => e.t === 'play' && e.card === card));

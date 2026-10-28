@@ -61,8 +61,9 @@ const BIRDS = [4, 12, 29];                                              // 고�
 const GUKJIN = 32;                                                      // 9월 열끗 (술잔): 쌍피로 칠 수도 있다
 const sumBy = (ids, f) => ids.reduce((a, id) => a + f(card(id)), 0);
 
-// 가져온 카드(번호 목록)의 점수. 국진(9월 열끗)은 열끗으로 칠지 쌍피로 칠지 더 좋은 쪽으로
-function scoreOf(ids) {
+// 가져온 카드(번호 목록)의 점수. 국진(9월 열끗)은 얻을 때 고른 쓰임(mode)대로, 안 골랐으면 더 좋은 쪽으로
+// mode: 'yeol'(열끗으로) · 'ssang'(쌍피로) · 없으면 점수가 높은 쪽 (국진을 안 가졌으면 상관없음)
+function scoreOf(ids, mode) {
   const has = (id) => ids.includes(id);
   const gw = ids.filter((id) => card(id).kind === 'gwang');
   const tti = ids.filter((id) => card(id).kind === 'tti');
@@ -82,8 +83,9 @@ function scoreOf(ids) {
     return p;
   };
   const a = detail(false);
-  if (!gukjin) return a;
+  if (!gukjin || mode === 'yeol') return a;
   const b = detail(true);
+  if (mode === 'ssang') return b;
   return b.total > a.total ? b : a;
 }
 
@@ -105,6 +107,7 @@ function newGame(rand = Math.random, first = 0, carry = 1) {
       ctx: null,                                   // 지금 진행 중인 차례의 임시 정보
       goCount: [0, 0], lastGo: [0, 0], shakes: [0, 0], bombs: [0, 0],
       shaken: {}, ppeok: {},                       // 흔들기 한 달 · 뻑이 쌓인 달 (누가 쌓았나)
+      gukjin: [null, null],                        // 국진(9월 열끗)을 가진 사람이 고른 쓰임: 'yeol' | 'ssang'
       events: [], seq: 0, plies: 0, result: null,
     };
   }
@@ -114,13 +117,13 @@ function clone(st) {
   return {
     ...st, deck: st.deck.slice(), floor: st.floor.slice(), hands: st.hands.map((h) => h.slice()), cap: st.cap.map((c) => c.slice()),
     ctx: st.ctx ? { ...st.ctx, held: st.ctx.held.slice(), gain: st.ctx.gain.slice(), options: st.ctx.options ? st.ctx.options.slice() : null } : null,
-    chong: (st.chong || []).slice(), goCount: st.goCount.slice(), lastGo: st.lastGo.slice(), shakes: st.shakes.slice(), bombs: st.bombs.slice(), shaken: { ...st.shaken }, ppeok: { ...st.ppeok },
+    chong: (st.chong || []).slice(), goCount: st.goCount.slice(), lastGo: st.lastGo.slice(), shakes: st.shakes.slice(), bombs: st.bombs.slice(), shaken: { ...st.shaken }, ppeok: { ...st.ppeok }, gukjin: (st.gukjin || [null, null]).slice(),
     events: [], result: st.result ? { ...st.result } : null,
   };
 }
 const emit = (st, ev) => { st.events.push(ev); };
 const remove = (arr, id) => { const i = arr.indexOf(id); if (i >= 0) arr.splice(i, 1); return i >= 0; };
-const score = (st, p) => scoreOf(st.cap[p]);
+const score = (st, p) => scoreOf(st.cap[p], st.gukjin && st.gukjin[p]);
 
 // 상대의 피를 n 장 뺏어 온다 (홑피부터, 없으면 쌍피)
 function steal(st, from, to, n, why) {
@@ -210,11 +213,17 @@ function flipMatch(st, f) {
   finishTurn(st);
 }
 
-// 차례를 마무리한다: 가져온 패를 먹은 패로 옮기고, 쓸 · 점수 · 고/스톱을 따진다
+// 차례를 마무리한다: 가져온 패를 먹은 패로 옮기고, (국진을 먹었으면 쓰임을 고르고) 쓸 · 점수 · 고/스톱을 따진다
 function finishTurn(st) {
   const p = st.turn, ctx = st.ctx;
   const got = [...ctx.held, ...ctx.gain];
+  ctx.got = got;
   if (got.length) { st.cap[p].push(...got); emit(st, { t: 'capture', who: p, cards: got }); }
+  if (got.includes(GUKJIN)) { st.phase = 'gukjin'; return; }              // 9월 열끗(국진): 열끗으로 쓸지 쌍피로 쓸지 고른 뒤 이어서 (apply 'gukjin')
+  finishTurn2(st);
+}
+function finishTurn2(st) {
+  const p = st.turn, ctx = st.ctx, got = ctx.got || [];
   if (got.length && !st.floor.length) {
     emit(st, { t: 'special', kind: 'sseul', who: p });
     steal(st, 1 - p, p, 1, 'sseul');
@@ -223,7 +232,7 @@ function finishTurn(st) {
   st.plies++;
   const s = score(st, p).total;
   if (!ctx.ppeok && s >= THRESH && s > st.lastGo[p]) {
-    if (st.hands[p].length === 0) { emit(st, { t: 'stop', who: p }); endGame(st, p, 'stop'); return; }   // 내 손에 패가 없으면 고를 할 수 없다: 스톱 (상대 손패가 남았어도)
+    if (st.hands[p].length === 0) { emit(st, { t: 'stop', who: p }); endGame(st, p, 'stop'); return; }   // 내 손에 패가 없으면 고를 수 없다: 스톱 (상대 손패가 남았어도)
     st.phase = 'gostop';
     return;
   }
@@ -296,6 +305,7 @@ function legalActions(st) {
     return acts;
   }
   if (st.phase === 'chooseHand' || st.phase === 'chooseFlip') return st.ctx.options.map((c) => ({ type: 'choose', card: c }));
+  if (st.phase === 'gukjin') return [{ type: 'gukjin', as: 'yeol' }, { type: 'gukjin', as: 'ssang' }];
   if (st.phase === 'gostop') return [{ type: 'go' }, { type: 'stop' }];
   if (st.phase === 'chongtong') return [{ type: 'chongtong' }, { type: 'continue' }];
   return [];
@@ -305,14 +315,14 @@ function legalActions(st) {
 function apply(st, act) {
   if (!act || st.phase === 'over') return false;
   const p = st.turn;
-  const ok = legalActions(st).some((a) => a.type === act.type && a.card === act.card && a.month === act.month);
+  const ok = legalActions(st).some((a) => a.type === act.type && a.card === act.card && a.month === act.month && a.as === act.as);
   if (!ok) return false;
   st.events = [];
   st.seq++;
   switch (act.type) {
     case 'shake':
       st.shaken[`${p}:${act.month}`] = true; st.shakes[p]++;
-      emit(st, { t: 'special', kind: 'shake', who: p, month: act.month });
+      emit(st, { t: 'special', kind: 'shake', who: p, month: act.month, cards: st.hands[p].filter((c) => monthOf(c) === act.month) });   // 흔든 패는 상대에게도 보여 준다
       return true;
     case 'play':
       playCard(st, act.card);
@@ -359,6 +369,11 @@ function apply(st, act) {
       if (st.chong.length) st.turn = st.chong[0];
       else { st.phase = 'play'; st.turn = st.first; }
       return true;
+    case 'gukjin':
+      st.gukjin[p] = act.as;
+      emit(st, { t: 'gukjin', who: p, as: act.as });
+      finishTurn2(st);
+      return true;
     case 'go': {
       st.goCount[p]++;
       st.lastGo[p] = score(st, p).total;
@@ -378,8 +393,9 @@ function apply(st, act) {
 const CARD_VALUE = (c) => (c.kind === 'gwang' ? (c.bi ? 3.2 : 5) : c.kind === 'yeol' ? (c.bird ? 4 : 2.8) : c.kind === 'tti' ? (c.tti === 'plain' ? 2 : 3) : c.ssang ? 2.2 : 1);
 
 function gainValue(st, p, gained) {
-  const before = scoreOf(st.cap[p]).total;
-  const after = scoreOf(st.cap[p].concat(gained)).total;
+  const mode = st.gukjin && st.gukjin[p];
+  const before = scoreOf(st.cap[p], mode).total;
+  const after = scoreOf(st.cap[p].concat(gained), mode).total;
   return (after - before) * 3 + gained.reduce((a, id) => a + CARD_VALUE(card(id)), 0);
 }
 
@@ -411,11 +427,15 @@ function aiPick(st, level = 'easy', rand = Math.random) {
   if (!acts.length) return null;
   const p = st.turn;
   if (st.phase === 'chongtong') return { type: 'chongtong' };           // 바로 이기는 게 이득
+  if (st.phase === 'gukjin') {                                           // 국진: 점수가 더 높은 쪽, 같으면 피가 7장 넘게 모였으면 쌍피
+    const y = scoreOf(st.cap[p], 'yeol'), q = scoreOf(st.cap[p], 'ssang');
+    return { type: 'gukjin', as: q.total > y.total || (q.total === y.total && y.counts.pi >= 7) ? 'ssang' : 'yeol' };
+  }
   if (st.phase === 'gostop') {
     const mine = score(st, p).total, opp = score(st, 1 - p).total;
     const handLeft = st.hands[p].length;
     if (level === 'hard') {
-      const oppThreat = opp >= 4 || scoreOf(st.cap[1 - p]).counts.gwang >= 2;
+      const oppThreat = opp >= 4 || scoreOf(st.cap[1 - p], st.gukjin && st.gukjin[1 - p]).counts.gwang >= 2;
       const go = handLeft >= 4 && !oppThreat && st.goCount[p] < 2 && mine >= 8;
       return { type: go ? 'go' : 'stop' };
     }
