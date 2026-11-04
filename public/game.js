@@ -265,7 +265,7 @@ function impact(r, strong) {                                         // 착! 퍼
   ring.animate([{ transform: 'scale(.55)', opacity: 0.9 }, { transform: 'scale(1.8)', opacity: 0 }], { duration: 280, easing: 'ease-out' });
   setTimeout(() => ring.remove(), 330);
   if (strong) { const tb = $('table'); tb.classList.remove('hit'); void tb.offsetWidth; tb.classList.add('hit'); }
-  try { if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) navigator.vibrate(strong ? 12 : 6); } catch (_) {}   // 한 번도 안 눌렀으면 브라우저가 막으니 부르지 않는다
+  try { if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) (window.arcadeVibe || navigator.vibrate.bind(navigator))(strong ? 12 : 6); } catch (_) {}   // 한 번도 안 눌렀으면 브라우저가 막으니 부르지 않는다
 }
 // 이번에 일어난 일들이 시작하는 때(ms)와 전체 길이
 function fxPlan(evs) {
